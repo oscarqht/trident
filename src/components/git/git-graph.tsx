@@ -470,10 +470,10 @@ export const GitGraph = forwardRef<GitGraphHandle, {
                                                 <HighlightedText text={node.message} searchQuery={searchQuery} />
                                             </span>
                                         </div>
-                                        <div className="w-32 truncate opacity-70 text-right">
+                                        <div className="w-32 truncate opacity-70 text-right commit-author">
                                             {isLocalChanges ? null : <HighlightedText text={node.author_name} searchQuery={searchQuery} />}
                                         </div>
-                                        <div className="w-20 truncate opacity-50 font-mono text-right">
+                                        <div className="w-20 truncate opacity-50 font-mono text-right commit-hash">
                                             {isLocalChanges ? null : <HighlightedText text={node.hash.substring(0, 7)} searchQuery={searchQuery} />}
                                         </div>
                                         <div className="w-32 truncate opacity-70 text-right">

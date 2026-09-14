@@ -4628,16 +4628,17 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 bg-base-100">
-        <div className="h-[57px] flex items-center justify-between gap-3 px-6 border-b border-base-300 shrink-0">
+        <div className="h-[57px] flex items-center justify-between gap-3 px-6 border-b border-base-300 shrink-0 history-header">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <h1 className="font-bold text-lg">History</h1>
             <div className="relative" ref={branchPopoverRef}>
               <button
-                className="btn btn-sm gap-2 max-w-[24rem]"
+                className="btn btn-sm gap-2 max-w-[24rem] header-icon-btn"
                 onClick={() => setIsBranchPopoverOpen(prev => !prev)}
                 title={currentBranchLabel}
+                aria-label={currentBranchLabel}
               >
-                <span className="truncate">{currentBranchLabel}</span>
+                <span className="truncate branch-selector-label">{currentBranchLabel}</span>
                 <i className={cn("iconoir-nav-arrow-down text-[16px] shrink-0 transition-transform", isBranchPopoverOpen && "rotate-180")} aria-hidden="true" />
               </button>
               {isBranchPopoverOpen && (
@@ -4648,85 +4649,91 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <button
-                className="btn btn-sm gap-2"
+                className="btn btn-sm gap-2 header-icon-btn"
                 onClick={() => void handleFetchFromAllRemotes()}
                 disabled={isFetchingAllRemotes || isPullingAllBranches || isPullOpen || isPushOpen}
                 title="Fetch latest changes from all remotes"
+                aria-label="Fetch"
               >
                 {isFetchingAllRemotes ? (
                   <span className="loading loading-spinner loading-xs"></span>
                 ) : (
                   <i className="iconoir-refresh text-[16px]" aria-hidden="true" />
                 )}
-                Fetch
+                <span className="header-btn-label">Fetch</span>
               </button>
               <button
-                className="btn btn-sm gap-2"
+                className="btn btn-sm gap-2 header-icon-btn"
                 onClick={confirmPullCurrentBranch}
                 disabled={!!pullActionDisabledReason || isPullingAllBranches || isPullOpen || isPushOpen}
                 title={pullActionDisabledReason || `Pull from ${currentTrackingBranch?.upstream}`}
+                aria-label="Pull"
               >
                 {pullLoadingRemotes ? (
                   <span className="loading loading-spinner loading-xs"></span>
                 ) : (
                   <i className="iconoir-arrow-down text-[16px]" aria-hidden="true" />
                 )}
-                Pull
+                <span className="header-btn-label">Pull</span>
               </button>
               <button
-                className="btn btn-sm gap-2"
+                className="btn btn-sm gap-2 header-icon-btn"
                 onClick={() => void handlePullAllBranches()}
                 disabled={!!pullAllActionDisabledReason || isPullOpen || isPushOpen || isPullingAllBranches}
                 title={pullAllActionDisabledReason || 'Pull all local branches from tracking remote branches'}
+                aria-label="Pull All"
               >
                 {isPullingAllBranches ? (
                   <span className="loading loading-spinner loading-xs"></span>
                 ) : (
-                  <i className="iconoir-arrow-down text-[16px]" aria-hidden="true" />
+                  <i className="iconoir-fast-arrow-down text-[16px]" aria-hidden="true" />
                 )}
-                Pull All
+                <span className="header-btn-label">Pull All</span>
               </button>
               <button
-                className="btn btn-sm gap-2"
+                className="btn btn-sm gap-2 header-icon-btn"
                 onClick={confirmPushCurrentBranch}
                 disabled={!!pushActionDisabledReason || isPullingAllBranches || isPullOpen || isPushOpen}
                 title={pushActionDisabledReason || (currentTrackingBranch ? `Push to ${currentTrackingBranch.upstream}` : 'Push current branch to remote')}
+                aria-label="Push"
               >
                 {pushLoadingRemotes ? (
                   <span className="loading loading-spinner loading-xs"></span>
                 ) : (
                   <i className="iconoir-arrow-up text-[16px]" aria-hidden="true" />
                 )}
-                Push
+                <span className="header-btn-label">Push</span>
               </button>
             </div>
           </div>
           <div className="shrink-0 flex items-center gap-2">
             <button
-              className="btn btn-sm gap-2"
+              className="btn btn-sm gap-2 header-icon-btn"
               onClick={() => void handleOpenRepoTerminal()}
               disabled={isOpeningRepoTerminal}
               title="Open terminal in repository folder"
+              aria-label="Open Terminal"
             >
               {isOpeningRepoTerminal ? (
                 <span className="loading loading-spinner loading-xs"></span>
               ) : (
                 <i className="iconoir-terminal text-[16px]" aria-hidden="true" />
               )}
-              Open Terminal
+              <span className="header-btn-label">Open Terminal</span>
             </button>
             <button
-              className="btn btn-sm gap-2"
+              className="btn btn-sm gap-2 header-icon-btn"
               onClick={() => void handleOpenRepoFolder()}
               disabled={isOpeningRepoFolder}
               title="Open repository folder in Finder"
+              aria-label="Open Repo Folder"
             >
               {isOpeningRepoFolder ? (
                 <span className="loading loading-spinner loading-xs"></span>
               ) : (
                 <i className="iconoir-folder text-[16px]" aria-hidden="true" />
               )}
-              Open Repo Folder
+              <span className="header-btn-label">Open Repo Folder</span>
             </button>
           </div>
         </div>
