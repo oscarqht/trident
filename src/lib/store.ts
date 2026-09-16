@@ -35,6 +35,13 @@ function normalizeDisplayName(displayName?: string | null): string | null | unde
   return normalized.length > 0 ? normalized : null;
 }
 
+function normalizeIcon(icon?: string | null): string | null | undefined {
+  if (icon === undefined) return undefined;
+  if (icon === null) return null;
+  const normalized = icon.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 export function addRepository(repoPath: string, name?: string, displayName?: string | null): Repository {
   const repos = getRepositories();
   // Check if exists
@@ -65,6 +72,9 @@ export function updateRepository(repoPath: string, updates: Partial<Repository>)
   const normalizedUpdates: Partial<Repository> = { ...updates };
   if ('displayName' in normalizedUpdates) {
     normalizedUpdates.displayName = normalizeDisplayName(normalizedUpdates.displayName);
+  }
+  if ('icon' in normalizedUpdates) {
+    normalizedUpdates.icon = normalizeIcon(normalizedUpdates.icon);
   }
 
   const updatedRepo = { ...repos[repoIndex], ...normalizedUpdates };

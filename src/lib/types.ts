@@ -13,6 +13,7 @@ export interface Repository {
   path: string;
   name: string;
   displayName?: string | null;
+  icon?: string | null;
   lastOpenedAt?: string;
   credentialId?: string | null;
   customScripts?: RepositoryCustomScript[];

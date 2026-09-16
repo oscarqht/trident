@@ -362,7 +362,11 @@ export function RepoList() {
                             >
                                 <td>
                                     <div className="flex items-center gap-3">
-                                        <i className="iconoir-bookmark text-[20px] opacity-70 group-hover:text-primary transition-colors" aria-hidden="true" />
+                                        {repo.icon ? (
+                                            <span className="text-[20px] leading-none w-5 text-center" aria-hidden="true">{repo.icon}</span>
+                                        ) : (
+                                            <i className="iconoir-bookmark text-[20px] opacity-70 group-hover:text-primary transition-colors" aria-hidden="true" />
+                                        )}
                                         <span className="font-bold text-sm">{repoDisplayName}</span>
                                     </div>
                                 </td>

@@ -117,7 +117,13 @@ export function Sidebar({ className, initialCollapsed = false }: SidebarPropsWit
                 className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer text-base-content overflow-hidden"
                 title={repoDisplayName ? `${repoDisplayName} - Go to Home` : "Go to Home"}
               >
-                <img src="/icon.png" alt="Trident" className="h-5 w-5 flex-shrink-0" />
+                {repository?.icon ? (
+                  <span className="h-5 w-5 flex-shrink-0 flex items-center justify-center text-base leading-none" aria-hidden="true">
+                    {repository.icon}
+                  </span>
+                ) : (
+                  <img src="/icon.png" alt="Trident" className="h-5 w-5 flex-shrink-0" />
+                )}
                 <h2 className="text-lg font-bold tracking-tight truncate">
                   {repoDisplayName || "Trident"}
                 </h2>
@@ -137,7 +143,13 @@ export function Sidebar({ className, initialCollapsed = false }: SidebarPropsWit
                 className="flex items-center justify-center h-8 w-8 hover:opacity-80 transition-opacity cursor-pointer"
                 title={repoDisplayName ? `${repoDisplayName} - Go to Home` : "Go to Home"}
               >
-                <img src="/icon.png" alt={repoDisplayName || "Trident"} className="h-5 w-5" />
+                {repository?.icon ? (
+                  <span className="h-5 w-5 flex items-center justify-center text-base leading-none" aria-hidden="true">
+                    {repository.icon}
+                  </span>
+                ) : (
+                  <img src="/icon.png" alt={repoDisplayName || "Trident"} className="h-5 w-5" />
+                )}
               </a>
             )}
             <div className={cn("flex items-center gap-1", isCollapsed && "flex-col")}>

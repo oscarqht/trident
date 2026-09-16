@@ -31,6 +31,7 @@ const updateRepoSchema = z.object({
   updates: z.object({
     name: z.string().optional(),
     displayName: z.string().nullable().optional(),
+    icon: z.string().nullable().optional(),
     lastOpenedAt: z.string().optional(),
     credentialId: z.string().optional().nullable(),
     customScripts: z.array(customScriptSchema).optional(),
