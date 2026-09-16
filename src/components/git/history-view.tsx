@@ -4819,7 +4819,12 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                       </>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-3 shrink-0">
+                    {!isCommitRangeSelection && selectedCommit?.author_name && (
+                      <span className="text-xs opacity-60 truncate max-w-[200px]" title={selectedCommit.author_email}>
+                        {selectedCommit.author_name}
+                      </span>
+                    )}
                     <button
                       className="ml-2 btn btn-ghost btn-xs btn-square"
                       onClick={() => selectSingleCommit(null)}
