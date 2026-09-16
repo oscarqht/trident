@@ -1,14 +1,23 @@
 import { Sidebar } from '@/components/layout/sidebar';
-import { Suspense } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { WorkspaceRepoOpenTracker } from '@/components/workspace-repo-open-tracker';
-import { getSettings } from '@/lib/store';
+import { Outlet } from 'react-router-dom';
 
 export default function WorkspaceLayout({
     children,
 }: {
-    children: React.ReactNode;
+    children?: React.ReactNode;
 }) {
-    const sidebarCollapsed = getSettings().sidebarCollapsed ?? false;
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('workspace-sidebar-collapsed');
+            if (saved !== null) {
+                setSidebarCollapsed(saved === 'true');
+            }
+        }
+    }, []);
 
     return (
         <div className="flex min-h-screen max-h-screen bg-base-100">
@@ -19,7 +28,7 @@ export default function WorkspaceLayout({
                 <Sidebar initialCollapsed={sidebarCollapsed} />
             </Suspense>
             <main className="flex-1 overflow-auto">
-                {children}
+                {children || <Outlet />}
             </main>
         </div>
     );

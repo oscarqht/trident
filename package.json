@@ -12,40 +12,41 @@
   },
   "files": [
     "bin",
-    ".next/BUILD_ID",
-    ".next/server",
-    ".next/static",
-    ".next/*.json",
-    ".next/*.js",
+    "dist",
+    "server",
     "public",
-    "next.config.mjs",
     "README.md"
   ],
   "scripts": {
-    "dev": "npx gfport 3100 -- next dev --webpack -p {PORT}",
-    "build": "next build --webpack",
-    "prepack": "rm -rf .next && npm run build",
-    "start": "next start -p 3100",
-    "lint": "eslint",
+    "dev": "concurrently -k -p \"[{name}]\" -n \"VITE,API\" -c \"cyan.bold,magenta.bold\" \"vite\" \"tsx watch server/index.ts\"",
+    "dev:client": "vite",
+    "dev:server": "tsx watch server/index.ts",
+    "build": "vite build",
+    "prepack": "rm -rf dist && npm run build",
+    "start": "node bin/trident-git.mjs",
     "cli": "node ./bin/trident-git.mjs",
-    "pack:preview": "npm pack --dry-run"
+    "pack:preview": "npm pack --dry-run",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "git",
     "client",
-    "nextjs"
+    "vite",
+    "hono"
   ],
   "license": "MIT",
   "dependencies": {
     "@alexbruf/react-diff-viewer": "^3.1.5",
+    "@hono/node-server": "^1.13.8",
     "@tanstack/react-query": "^5.90.20",
     "clsx": "^2.1.1",
     "daisyui": "^5.5.18",
+    "hono": "^4.7.4",
     "keytar": "^7.9.0",
-    "next": "16.1.6",
     "next-themes": "^0.4.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-router-dom": "^7.18.4",
     "react-syntax-highlighter": "^16.1.0",
     "simple-git": "^3.30.0",
     "tailwind-merge": "^3.4.0",
@@ -53,14 +54,18 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@tailwindcss/vite": "^4.1.18",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
     "gfport": "^1.0.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.19.3",
+    "typescript": "^5",
+    "vite": "^6.1.1"
   }
 }

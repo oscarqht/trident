@@ -2,7 +2,6 @@
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
-import { createRequire } from "node:module";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,8 +9,6 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const APP_ROOT = path.resolve(__dirname, "..");
-const require = createRequire(import.meta.url);
-const NEXT_BIN = require.resolve("next/dist/bin/next");
 const DEFAULT_PORT = 3100;
 
 function printHelp() {
@@ -89,12 +86,48 @@ async function findAvailablePort(startPort, maxAttempts = 20) {
   throw new Error(`Could not find an available port in range ${startPort}-${startPort + maxAttempts - 1}.`);
 }
 
-function runNext(args) {
+function ensureBuildExists() {
+  const clientIndexPath = path.join(APP_ROOT, "dist", "client", "index.html");
+  if (!fs.existsSync(clientIndexPath)) {
+    throw new Error(
+      "No production build found (dist/client/index.html is missing). Run 'npm run build' first.",
+    );
+  }
+}
+
+function runServer(port, isDev = false) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [NEXT_BIN, ...args], {
+    const tsxCli = path.join(APP_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
+    const serverEntry = path.join(APP_ROOT, "server", "index.ts");
+    
+    if (isDev) {
+      const child = spawn("npm", ["run", "dev"], {
+        cwd: APP_ROOT,
+        stdio: "inherit",
+        env: {
+          ...process.env,
+          PORT: String(port),
+        },
+      });
+      child.on("error", reject);
+      child.on("exit", (code, signal) => {
+        if (signal) {
+          process.kill(process.pid, signal);
+          return;
+        }
+        resolve(code === null ? 1 : code);
+      });
+      return;
+    }
+
+    const child = spawn(process.execPath, [tsxCli, serverEntry], {
       cwd: APP_ROOT,
       stdio: "inherit",
-      env: process.env,
+      env: {
+        ...process.env,
+        PORT: String(port),
+        RUN_STANDALONE: "true",
+      },
     });
 
     child.on("error", reject);
@@ -106,15 +139,6 @@ function runNext(args) {
       resolve(code === null ? 1 : code);
     });
   });
-}
-
-function ensureBuildExists() {
-  const buildIdPath = path.join(APP_ROOT, ".next", "BUILD_ID");
-  if (!fs.existsSync(buildIdPath)) {
-    throw new Error(
-      "No production build found in this package (.next/BUILD_ID is missing). The npm package must be published with prebuilt assets.",
-    );
-  }
 }
 
 async function main() {
@@ -134,13 +158,13 @@ async function main() {
     }
 
     if (options.mode === "dev") {
-      console.log(`Starting trident-git in development mode on http://localhost:${port}`);
-      process.exit(await runNext(["dev", "--webpack", "-p", String(port)]));
+      console.log(`Starting trident in development mode on http://localhost:${port}`);
+      process.exit(await runServer(port, true));
     }
 
     ensureBuildExists();
-    console.log(`Starting trident-git on http://localhost:${port}`);
-    process.exit(await runNext(["start", "-p", String(port)]));
+    console.log(`Starting trident on http://localhost:${port}`);
+    process.exit(await runServer(port, false));
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`trident-git failed to start: ${errorMessage}`);
