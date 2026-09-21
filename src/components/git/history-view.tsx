@@ -1,7 +1,6 @@
 'use client';
 
 import { useGitLog, useGitBranches, useGitStatus, useGitAction, useRepository, useUpdateRepository, useSettings, useUpdateSettings } from '@/hooks/use-git';
-import { useQueryClient } from '@tanstack/react-query';
 import { Repository, RepositoryCustomScript, Commit } from '@/lib/types';
 import { GitGraph, GitGraphHandle } from './git-graph';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
@@ -17,6 +16,8 @@ import { BranchMenuOptions, BranchOperation, buildBranchContextMenuItems } from 
 import { BranchRowSelectModifiers, BranchTreeItem } from './branch-tree-item';
 import { CommitRowSelectModifiers } from './commit-row-select-modifiers';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { useCustomScriptExecution } from '@/contexts/custom-script-execution-context';
 
 
 const MIN_HISTORY_PANEL_HEIGHT = 100;
@@ -25,17 +26,6 @@ const MIN_COMMIT_DETAILS_MESSAGE_RATIO = 0.15;
 const MAX_COMMIT_DETAILS_MESSAGE_RATIO = 0.75;
 const DEFAULT_COMMIT_DETAILS_MESSAGE_RATIO = 0.28;
 type MergeConflictStatus = 'checking' | 'no-conflict' | 'has-conflicts';
-
-type ScriptExecutionStatus = 'idle' | 'starting' | 'running' | 'completed' | 'failed' | 'canceled';
-type ScriptExecutionState = {
-  isOpen: boolean;
-  executionId: string | null;
-  scriptName: string;
-  branchRef: string;
-  output: string;
-  status: ScriptExecutionStatus;
-  error: string | null;
-};
 
 function clampHistoryPanelHeight(height: number): number {
   return Math.min(Math.max(height, MIN_HISTORY_PANEL_HEIGHT), MAX_HISTORY_PANEL_HEIGHT);
@@ -67,42 +57,7 @@ function parseTrackingUpstream(upstream: string): { remote: string; branch: stri
   };
 }
 
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
-    textArea.style.position = 'fixed';
-    textArea.style.left = '-9999px';
-    document.body.appendChild(textArea);
-    textArea.select();
-
-    try {
-      document.execCommand('copy');
-      return true;
-    } catch {
-      return false;
-    } finally {
-      document.body.removeChild(textArea);
-    }
-  }
-}
-
-const DEFAULT_SCRIPT_EXECUTION: ScriptExecutionState = {
-  isOpen: false,
-  executionId: null,
-  scriptName: '',
-  branchRef: '',
-  output: '',
-  status: 'idle',
-  error: null,
-};
-
-
 export function HistoryView({ repoPath }: { repoPath: string }) {
-  const queryClient = useQueryClient();
   const { data: settings } = useSettings();
   const updateSettings = useUpdateSettings();
   const router = useRouter();
@@ -385,18 +340,9 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   const [branchSelectionAnchor, setBranchSelectionAnchor] = useState<string | null>(null);
   const [isBranchPopoverOpen, setIsBranchPopoverOpen] = useState(false);
   const branchPopoverRef = useRef<HTMLDivElement>(null);
-  const [scriptExecution, setScriptExecution] = useState<ScriptExecutionState>(DEFAULT_SCRIPT_EXECUTION);
-  const [isCancelingScriptExecution, setIsCancelingScriptExecution] = useState(false);
-  const [isCopyingScriptOutput, setIsCopyingScriptOutput] = useState(false);
-  const [didCopyScriptOutput, setDidCopyScriptOutput] = useState(false);
-  const isScriptExecutionRunning = scriptExecution.status === 'starting' || scriptExecution.status === 'running';
-  const isScriptExecutionFinished = scriptExecution.status === 'completed' || scriptExecution.status === 'failed' || scriptExecution.status === 'canceled';
-
-  useEffect(() => {
-    if (isScriptExecutionFinished && scriptExecution.executionId) {
-      queryClient.invalidateQueries({ queryKey: ['git', repoPath] });
-    }
-  }, [isScriptExecutionFinished, scriptExecution.executionId, queryClient, repoPath]);
+  const { startScript } = useCustomScriptExecution();
+  const [isCustomScriptsMenuOpen, setIsCustomScriptsMenuOpen] = useState(false);
+  const customScriptsMenuRef = useRef<HTMLDivElement>(null);
 
   const closeRenameBranchDialog = useCallback(() => {
     setIsRenameOpen(false);
@@ -428,12 +374,6 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     setCommitToReword(null);
     setNewMessageSubject('');
     setNewMessageBody('');
-  }, []);
-
-  const closeScriptExecutionDialog = useCallback(() => {
-    setScriptExecution(DEFAULT_SCRIPT_EXECUTION);
-    setDidCopyScriptOutput(false);
-    setIsCancelingScriptExecution(false);
   }, []);
 
   const closeTopPopup = useCallback(() => {
@@ -536,8 +476,9 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
       setIsBranchPopoverOpen(false);
       return;
     }
-    if (scriptExecution.isOpen && isScriptExecutionFinished) {
-      closeScriptExecutionDialog();
+    if (isCustomScriptsMenuOpen) {
+      setIsCustomScriptsMenuOpen(false);
+      return;
     }
   }, [
     isAbortCherryPickOpen,
@@ -567,9 +508,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     isResetOpen,
     isRevertOpen,
     isBranchPopoverOpen,
-    scriptExecution.isOpen,
-    isScriptExecutionFinished,
-    closeScriptExecutionDialog,
+    isCustomScriptsMenuOpen,
     isSwitchBranchModalOpen,
     isSwitchingBranch,
   ]);
@@ -703,9 +642,6 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
       }
       return;
     }
-    if (scriptExecution.isOpen && isScriptExecutionFinished) {
-      closeScriptExecutionDialog();
-    }
   };
 
   const isAnyPopupOpen =
@@ -730,7 +666,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     isCheckoutToLocalOpen ||
     isSwitchBranchModalOpen ||
     isBranchPopoverOpen ||
-    scriptExecution.isOpen;
+    isCustomScriptsMenuOpen;
 
   useEscapeDismiss(isAnyPopupOpen, closeTopPopup, confirmTopPopup);
 
@@ -888,6 +824,22 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
       document.removeEventListener('mousedown', handleMouseDown);
     };
   }, [isBranchPopoverOpen]);
+
+  useEffect(() => {
+    if (!isCustomScriptsMenuOpen) return;
+
+    const handleMouseDown = (event: MouseEvent) => {
+      if (customScriptsMenuRef.current && !customScriptsMenuRef.current.contains(event.target as Node)) {
+        setIsCustomScriptsMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleMouseDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+    };
+  }, [isCustomScriptsMenuOpen]);
 
   // Build branch trees for local and remote branches
   const localBranchTree = useMemo(() => {
@@ -1206,6 +1158,21 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     () => (selectedHash && selectedHash !== '__LOCAL_CHANGES__' ? log?.all.find((commit) => commit.hash === selectedHash) : null),
     [log?.all, selectedHash]
   );
+  const headerScriptTargetRef = useMemo(() => {
+    if (selectedCommit && selectedCommit.hash && selectedCommit.hash !== '__LOCAL_CHANGES__') {
+      return {
+        ref: selectedCommit.hash,
+        label: `Commit ${selectedCommit.hash.substring(0, 7)}`,
+        sublabel: selectedCommit.message,
+      };
+    }
+    const branch = currentBranch || 'HEAD';
+    return {
+      ref: branch,
+      label: `Branch ${branch}`,
+      sublabel: null,
+    };
+  }, [selectedCommit, currentBranch]);
   const selectedCommitRange = useMemo(() => {
     if (!log?.all || selectedCommitHashes.length < 2 || selectedCommitHashes.includes('__LOCAL_CHANGES__')) return null;
 
@@ -1456,171 +1423,13 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     setBranchSelectionAnchor(branch);
   }, [selectedBranchSet]);
 
-  const handleRunCustomScript = useCallback(async (script: RepositoryCustomScript, branchRef: string) => {
-    setDidCopyScriptOutput(false);
-    setIsCancelingScriptExecution(false);
-    setScriptExecution({
-      isOpen: true,
-      executionId: null,
-      scriptName: script.name,
+  const handleRunCustomScript = useCallback((script: RepositoryCustomScript, branchRef: string) => {
+    void startScript({
+      repoPath,
       branchRef,
-      output: '',
-      status: 'starting',
-      error: null,
+      script,
     });
-
-    try {
-      const response = await fetch('/api/custom-scripts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          command: 'start',
-          repoPath,
-          branchRef,
-          scriptContent: script.content,
-        }),
-      });
-
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to start script execution');
-      }
-
-      const prelude: string[] = [];
-      if (result.previousBranch && result.checkedOutBranch && result.previousBranch !== result.checkedOutBranch) {
-        prelude.push(`[info] Checked out ${result.checkedOutBranch} (from ${result.previousBranch})`);
-      }
-
-      setScriptExecution((prev) => ({
-        ...prev,
-        executionId: result.executionId,
-        output: [prelude.join('\n'), result.output].filter(Boolean).join('\n'),
-        status: result.status as ScriptExecutionStatus,
-        error: null,
-      }));
-    } catch (error) {
-      setScriptExecution((prev) => ({
-        ...prev,
-        status: 'failed',
-        error: (error as Error).message,
-        output: prev.output
-          ? `${prev.output}\n[error] ${(error as Error).message}`
-          : `[error] ${(error as Error).message}`,
-      }));
-    }
-  }, [repoPath]);
-
-  const handleCancelCustomScriptExecution = useCallback(async () => {
-    if (!scriptExecution.executionId || !isScriptExecutionRunning) return;
-
-    setIsCancelingScriptExecution(true);
-    try {
-      const response = await fetch('/api/custom-scripts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          command: 'cancel',
-          executionId: scriptExecution.executionId,
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to cancel script execution');
-      }
-
-      setScriptExecution((prev) => ({
-        ...prev,
-        output: result.output,
-        status: result.status as ScriptExecutionStatus,
-      }));
-
-      if (result.status !== 'running' && result.status !== 'starting') {
-        setIsCancelingScriptExecution(false);
-      }
-    } catch (error) {
-      setScriptExecution((prev) => ({
-        ...prev,
-        output: `${prev.output}\n[error] ${(error as Error).message}`,
-      }));
-      setIsCancelingScriptExecution(false);
-    }
-  }, [scriptExecution.executionId, isScriptExecutionRunning]);
-
-  const handleCopyCustomScriptOutput = useCallback(async () => {
-    if (isCopyingScriptOutput) return;
-
-    setIsCopyingScriptOutput(true);
-    const copied = await copyText(scriptExecution.output);
-    setIsCopyingScriptOutput(false);
-    setDidCopyScriptOutput(copied);
-    if (copied) {
-      setTimeout(() => setDidCopyScriptOutput(false), 1500);
-    }
-  }, [isCopyingScriptOutput, scriptExecution.output]);
-
-  useEffect(() => {
-    if (!scriptExecution.executionId || !isScriptExecutionRunning) return;
-
-    let disposed = false;
-    let pollTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const poll = async () => {
-      try {
-        const response = await fetch('/api/custom-scripts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            command: 'status',
-            executionId: scriptExecution.executionId,
-          }),
-        });
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw new Error(result.error || 'Failed to fetch script execution output');
-        }
-
-        if (disposed) return;
-
-        const nextStatus = result.status as ScriptExecutionStatus;
-        setScriptExecution((prev) => {
-          if (prev.executionId !== result.executionId) return prev;
-          return {
-            ...prev,
-            output: result.output,
-            status: nextStatus,
-            error: null,
-          };
-        });
-
-        if (nextStatus === 'running') {
-          pollTimer = setTimeout(poll, 450);
-        } else {
-          setIsCancelingScriptExecution(false);
-        }
-      } catch (error) {
-        if (disposed) return;
-        setIsCancelingScriptExecution(false);
-        setScriptExecution((prev) => ({
-          ...prev,
-          status: 'failed',
-          error: (error as Error).message,
-          output: prev.output
-            ? `${prev.output}\n[error] ${(error as Error).message}`
-            : `[error] ${(error as Error).message}`,
-        }));
-      }
-    };
-
-    void poll();
-
-    return () => {
-      disposed = true;
-      if (pollTimer) {
-        clearTimeout(pollTimer);
-      }
-    };
-  }, [scriptExecution.executionId, isScriptExecutionRunning]);
+  }, [repoPath, startScript]);
 
   const confirmDeleteBranches = (branches: string[]) => {
     const deletableBranches = branches.filter((branch) => branch !== currentBranch);
@@ -4540,92 +4349,6 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
         </dialog>
       )}
 
-      {scriptExecution.isOpen && (
-        <dialog className="modal modal-open">
-          <div className="modal-box max-w-4xl">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h3 className="font-bold text-lg truncate">Custom Script: {scriptExecution.scriptName}</h3>
-                <p className="text-xs opacity-70 mt-1 break-all">
-                  Branch: {scriptExecution.branchRef}
-                </p>
-              </div>
-              <span
-                className={cn(
-                  "badge badge-sm shrink-0",
-                  scriptExecution.status === 'running' || scriptExecution.status === 'starting'
-                    ? 'badge-info'
-                    : scriptExecution.status === 'completed'
-                      ? 'badge-success'
-                      : scriptExecution.status === 'failed'
-                        ? 'badge-error'
-                        : scriptExecution.status === 'canceled'
-                          ? 'badge-warning'
-                          : 'badge-ghost'
-                )}
-              >
-                {scriptExecution.status}
-              </span>
-            </div>
-
-            <div className="mt-4 border border-base-300 rounded bg-base-200/40">
-              <pre className="p-3 font-mono text-xs overflow-auto max-h-[50vh] whitespace-pre-wrap break-words">{scriptExecution.output || 'Waiting for output...'}</pre>
-            </div>
-
-            {scriptExecution.error && (
-              <div className="alert alert-error py-2 mt-3">
-                <span>{scriptExecution.error}</span>
-              </div>
-            )}
-
-            <div className="modal-action">
-              <button
-                className="btn btn-warning"
-                onClick={() => void handleCancelCustomScriptExecution()}
-                disabled={!isScriptExecutionRunning || isCancelingScriptExecution}
-              >
-                {isCancelingScriptExecution && <span className="loading loading-spinner loading-xs"></span>}
-                Cancel
-              </button>
-              <button
-                className="btn btn-outline"
-                onClick={() => void handleCopyCustomScriptOutput()}
-                disabled={isCopyingScriptOutput}
-              >
-                {isCopyingScriptOutput && <span className="loading loading-spinner loading-xs"></span>}
-                {didCopyScriptOutput ? 'Copied' : 'Copy'}
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => {
-                  setScriptExecution(DEFAULT_SCRIPT_EXECUTION);
-                  setDidCopyScriptOutput(false);
-                  setIsCancelingScriptExecution(false);
-                }}
-                disabled={!isScriptExecutionFinished}
-              >
-                Done
-              </button>
-            </div>
-          </div>
-          <form method="dialog" className="modal-backdrop">
-            <button
-              onClick={(e) => {
-                if (!isScriptExecutionFinished) {
-                  e.preventDefault();
-                  return;
-                }
-                setScriptExecution(DEFAULT_SCRIPT_EXECUTION);
-                setDidCopyScriptOutput(false);
-                setIsCancelingScriptExecution(false);
-              }}
-            >
-              close
-            </button>
-          </form>
-        </dialog>
-      )}
-
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 bg-base-100">
         <div className="h-[57px] flex items-center justify-between gap-3 px-6 border-b border-base-300 shrink-0 history-header">
@@ -4707,6 +4430,76 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
             </div>
           </div>
           <div className="shrink-0 flex items-center gap-2">
+            <div className="relative" ref={customScriptsMenuRef}>
+              <button
+                className="btn btn-sm gap-2 header-icon-btn"
+                onClick={() => setIsCustomScriptsMenuOpen((prev) => !prev)}
+                title={`Run custom scripts on ${headerScriptTargetRef.label}`}
+                aria-label="Custom Scripts"
+              >
+                <i className="iconoir-code text-[16px]" aria-hidden="true" />
+                <span className="header-btn-label">Custom Scripts</span>
+                <i
+                  className={cn(
+                    "iconoir-nav-arrow-down text-[14px] shrink-0 transition-transform",
+                    isCustomScriptsMenuOpen && "rotate-180"
+                  )}
+                  aria-hidden="true"
+                />
+              </button>
+
+              {isCustomScriptsMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 z-50 w-72 bg-base-100 rounded-lg shadow-xl border border-base-300 p-2 text-xs">
+                  <div className="px-3 py-2 border-b border-base-200">
+                    <div className="text-[10px] uppercase font-bold tracking-wider opacity-60">
+                      Target Ref
+                    </div>
+                    <div className="font-semibold truncate text-xs mt-0.5">
+                      {headerScriptTargetRef.label}
+                    </div>
+                    {headerScriptTargetRef.sublabel && (
+                      <div className="text-[11px] opacity-60 truncate mt-0.5" title={headerScriptTargetRef.sublabel}>
+                        {headerScriptTargetRef.sublabel}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="py-1 max-h-56 overflow-auto">
+                    {customBranchScripts.length === 0 ? (
+                      <div className="px-3 py-3 text-center opacity-60 text-xs">
+                        No custom scripts configured.
+                      </div>
+                    ) : (
+                      customBranchScripts.map((script) => (
+                        <button
+                          key={script.id}
+                          className="w-full text-left px-3 py-2 hover:bg-base-200 rounded flex items-center justify-between gap-2 group transition-colors"
+                          onClick={() => {
+                            setIsCustomScriptsMenuOpen(false);
+                            handleRunCustomScript(script, headerScriptTargetRef.ref);
+                          }}
+                        >
+                          <span className="font-medium truncate">{script.name}</span>
+                          <i className="iconoir-play text-[13px] opacity-0 group-hover:opacity-100 text-primary transition-opacity shrink-0" aria-hidden="true" />
+                        </button>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="pt-2 border-t border-base-200">
+                    <Link
+                      href={`/workspace/custom-scripts?path=${encodeURIComponent(repoPath)}`}
+                      className="w-full btn btn-ghost btn-xs justify-start gap-1.5 font-normal text-xs"
+                      onClick={() => setIsCustomScriptsMenuOpen(false)}
+                    >
+                      <i className="iconoir-settings text-[14px]" aria-hidden="true" />
+                      Manage scripts...
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button
               className="btn btn-sm gap-2 header-icon-btn"
               onClick={() => void handleOpenRepoTerminal()}

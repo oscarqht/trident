@@ -39,6 +39,7 @@ const statusSchema = z.object({
 const cancelSchema = z.object({
   command: z.literal('cancel'),
   executionId: z.string().min(1),
+  force: z.boolean().optional(),
 });
 
 const requestSchema = z.discriminatedUnion('command', [startSchema, statusSchema, cancelSchema]);
@@ -80,6 +81,27 @@ function cleanupFinishedExecutions() {
   }
 }
 
+function killProcessGroup(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals = 'SIGTERM') {
+  if (!child.pid) return;
+  if (process.platform === 'win32') {
+    try {
+      spawn('taskkill', ['/pid', child.pid.toString(), '/T', '/F']);
+    } catch {
+      // ignore
+    }
+  } else {
+    try {
+      process.kill(-child.pid, signal);
+    } catch {
+      try {
+        child.kill(signal);
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
 export async function POST(request: Request) {
   try {
     cleanupFinishedExecutions();
@@ -104,14 +126,48 @@ export async function POST(request: Request) {
 
       if (execution.status === 'running' && execution.process) {
         execution.cancelRequested = true;
-        appendOutput(execution, '\n[info] Cancel requested...\n');
-        execution.process.kill('SIGTERM');
+        const force = payload.force === true;
 
-        setTimeout(() => {
-          if (execution.process && execution.cancelRequested) {
-            execution.process.kill('SIGKILL');
-          }
-        }, 1500);
+        if (force) {
+          appendOutput(execution, '\n[info] Force termination requested...\n');
+          killProcessGroup(execution.process, 'SIGKILL');
+          setTimeout(() => {
+            if (execution.status === 'running') {
+              if (execution.process) {
+                try {
+                  execution.process.stdout?.destroy();
+                  execution.process.stderr?.destroy();
+                } catch {}
+                execution.process = null;
+              }
+              execution.status = 'canceled';
+              execution.finishedAt = new Date().toISOString();
+            }
+          }, 200);
+        } else {
+          appendOutput(execution, '\n[info] Terminating process...\n');
+          killProcessGroup(execution.process, 'SIGTERM');
+
+          setTimeout(() => {
+            if (execution.status === 'running' && execution.process) {
+              appendOutput(execution, '\n[info] Process did not terminate after 2s, escalating to SIGKILL...\n');
+              killProcessGroup(execution.process, 'SIGKILL');
+              setTimeout(() => {
+                if (execution.status === 'running') {
+                  if (execution.process) {
+                    try {
+                      execution.process.stdout?.destroy();
+                      execution.process.stderr?.destroy();
+                    } catch {}
+                    execution.process = null;
+                  }
+                  execution.status = 'canceled';
+                  execution.finishedAt = new Date().toISOString();
+                }
+              }, 400);
+            }
+          }, 2000);
+        }
       }
 
       return NextResponse.json({ success: true, ...toResponsePayload(execution) });
@@ -141,6 +197,7 @@ export async function POST(request: Request) {
       cwd: repoPath,
       env: process.env,
       stdio: 'pipe',
+      detached: process.platform !== 'win32',
     });
 
     const execution: ScriptExecution = {
@@ -157,6 +214,25 @@ export async function POST(request: Request) {
 
     executions.set(executionId, execution);
 
+    const finishExecution = (code: number | null, signal: NodeJS.Signals | null) => {
+      if (execution.finishedAt) return;
+      execution.exitCode = code;
+      execution.signal = signal;
+      execution.finishedAt = new Date().toISOString();
+      if (execution.cancelRequested) {
+        execution.status = 'canceled';
+      } else {
+        execution.status = code === 0 ? 'completed' : 'failed';
+      }
+      if (execution.process) {
+        try {
+          execution.process.stdout?.destroy();
+          execution.process.stderr?.destroy();
+        } catch {}
+        execution.process = null;
+      }
+    };
+
     const onData = (chunk: Buffer | string) => {
       appendOutput(execution, typeof chunk === 'string' ? chunk : chunk.toString('utf-8'));
     };
@@ -168,21 +244,21 @@ export async function POST(request: Request) {
       appendOutput(execution, `\n[error] ${error.message}\n`);
       execution.status = execution.cancelRequested ? 'canceled' : 'failed';
       execution.finishedAt = new Date().toISOString();
-      execution.process = null;
+      if (execution.process) {
+        try {
+          execution.process.stdout?.destroy();
+          execution.process.stderr?.destroy();
+        } catch {}
+        execution.process = null;
+      }
+    });
+
+    child.on('exit', (code, signal) => {
+      finishExecution(code, signal);
     });
 
     child.on('close', (code, signal) => {
-      execution.exitCode = code;
-      execution.signal = signal;
-      execution.finishedAt = new Date().toISOString();
-      execution.process = null;
-
-      if (execution.cancelRequested) {
-        execution.status = 'canceled';
-        return;
-      }
-
-      execution.status = code === 0 ? 'completed' : 'failed';
+      finishExecution(code, signal);
     });
 
     child.stdin.write(scriptContent);
