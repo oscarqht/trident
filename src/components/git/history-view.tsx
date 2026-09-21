@@ -4473,7 +4473,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                       customBranchScripts.map((script) => (
                         <button
                           key={script.id}
-                          className="w-full text-left px-3 py-2 hover:bg-base-200 rounded flex items-center justify-between gap-2 group transition-colors"
+                          className="w-full text-left px-3 py-2 hover:bg-base-200 rounded flex items-center justify-between gap-2 group transition-colors cursor-pointer"
                           onClick={() => {
                             setIsCustomScriptsMenuOpen(false);
                             handleRunCustomScript(script, headerScriptTargetRef.ref);
@@ -4489,7 +4489,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                   <div className="pt-2 border-t border-base-200">
                     <Link
                       href={`/workspace/custom-scripts?path=${encodeURIComponent(repoPath)}`}
-                      className="w-full btn btn-ghost btn-xs justify-start gap-1.5 font-normal text-xs"
+                      className="w-full btn btn-ghost btn-xs justify-start gap-1.5 font-normal text-xs cursor-pointer"
                       onClick={() => setIsCustomScriptsMenuOpen(false)}
                     >
                       <i className="iconoir-settings text-[14px]" aria-hidden="true" />
