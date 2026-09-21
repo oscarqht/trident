@@ -40,6 +40,71 @@ export function CustomScriptExecutionProvider({ children }: { children: React.Re
   const executionsRef = useRef(executions);
   executionsRef.current = executions;
 
+  // Load active and undismissed executions from server on initial mount / reload
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadInitialExecutions() {
+      try {
+        const res = await fetch('/api/custom-scripts');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!isMounted || !data.success || !Array.isArray(data.executions)) return;
+
+        const serverExecutions: ScriptExecutionItem[] = data.executions.map((e: {
+          executionId: string;
+          repoPath: string;
+          branchRef: string;
+          scriptName: string;
+          status: ScriptExecutionStatus;
+          output?: string;
+          startedAt: string;
+          finishedAt?: string | null;
+        }) => ({
+          id: e.executionId,
+          repoPath: e.repoPath,
+          branchRef: e.branchRef,
+          scriptName: e.scriptName,
+          scriptContent: '',
+          status: e.status,
+          output: e.output || '',
+          error: null,
+          startedAt: e.startedAt,
+          finishedAt: e.finishedAt || null,
+          isCanceling: false,
+          isForceCanceling: false,
+          isModalOpen: false, // Default to docked card on reload
+        }));
+
+        setExecutions((prev) => {
+          const localOnly = prev.filter((item) => item.id.startsWith('temp-'));
+          const existingMap = new Map(prev.map((item) => [item.id, item]));
+          const merged = serverExecutions.map((se) => {
+            const local = existingMap.get(se.id);
+            if (local) {
+              return {
+                ...se,
+                isModalOpen: local.isModalOpen,
+                isCanceling: local.isCanceling,
+                isForceCanceling: local.isForceCanceling,
+              };
+            }
+            return se;
+          });
+          return [...localOnly, ...merged];
+        });
+      } catch {
+        // Ignore fetch errors during initial load
+      }
+    }
+
+    void loadInitialExecutions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const startScript = useCallback(async ({
     repoPath,
     branchRef,
@@ -80,6 +145,7 @@ export function CustomScriptExecutionProvider({ children }: { children: React.Re
           command: 'start',
           repoPath,
           branchRef,
+          scriptName: script.name,
           scriptContent: script.content,
         }),
       });
@@ -213,6 +279,18 @@ export function CustomScriptExecutionProvider({ children }: { children: React.Re
 
   const dismissExecution = useCallback((executionId: string) => {
     setExecutions((prev) => prev.filter((e) => e.id !== executionId));
+    if (!executionId.startsWith('temp-')) {
+      void fetch('/api/custom-scripts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          command: 'dismiss',
+          executionId,
+        }),
+      }).catch(() => {
+        // ignore errors on dismiss sync
+      });
+    }
   }, []);
 
   // Polling loop for running executions

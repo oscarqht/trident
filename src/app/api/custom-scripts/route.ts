@@ -10,6 +10,10 @@ type ExecutionStatus = 'running' | 'completed' | 'failed' | 'canceled';
 
 interface ScriptExecution {
   id: string;
+  repoPath: string;
+  branchRef: string;
+  scriptName: string;
+  scriptContent: string;
   status: ExecutionStatus;
   cancelRequested: boolean;
   output: string;
@@ -28,6 +32,7 @@ const startSchema = z.object({
   command: z.literal('start'),
   repoPath: z.string().min(1),
   branchRef: z.string().min(1),
+  scriptName: z.string().min(1),
   scriptContent: z.string(),
 });
 
@@ -42,7 +47,22 @@ const cancelSchema = z.object({
   force: z.boolean().optional(),
 });
 
-const requestSchema = z.discriminatedUnion('command', [startSchema, statusSchema, cancelSchema]);
+const listSchema = z.object({
+  command: z.literal('list'),
+});
+
+const dismissSchema = z.object({
+  command: z.literal('dismiss'),
+  executionId: z.string().min(1),
+});
+
+const requestSchema = z.discriminatedUnion('command', [
+  startSchema,
+  statusSchema,
+  cancelSchema,
+  listSchema,
+  dismissSchema,
+]);
 
 function normalizeBranchForCheckout(branchRef: string): string {
   return branchRef.startsWith('remotes/') ? branchRef.slice('remotes/'.length) : branchRef;
@@ -58,6 +78,9 @@ function appendOutput(execution: ScriptExecution, text: string) {
 function toResponsePayload(execution: ScriptExecution) {
   return {
     executionId: execution.id,
+    repoPath: execution.repoPath,
+    branchRef: execution.branchRef,
+    scriptName: execution.scriptName,
     status: execution.status,
     cancelRequested: execution.cancelRequested,
     output: execution.output,
@@ -102,12 +125,43 @@ function killProcessGroup(child: ChildProcessWithoutNullStreams, signal: NodeJS.
   }
 }
 
+export async function GET() {
+  cleanupFinishedExecutions();
+  return NextResponse.json({
+    success: true,
+    executions: Array.from(executions.values()).map(toResponsePayload),
+  });
+}
+
 export async function POST(request: Request) {
   try {
     cleanupFinishedExecutions();
 
     const body = await request.json();
     const payload = requestSchema.parse(body);
+
+    if (payload.command === 'list') {
+      return NextResponse.json({
+        success: true,
+        executions: Array.from(executions.values()).map(toResponsePayload),
+      });
+    }
+
+    if (payload.command === 'dismiss') {
+      const execution = executions.get(payload.executionId);
+      if (execution) {
+        if (execution.status === 'running' && execution.process) {
+          killProcessGroup(execution.process, 'SIGKILL');
+          try {
+            execution.process.stdout?.destroy();
+            execution.process.stderr?.destroy();
+          } catch {}
+          execution.process = null;
+        }
+        executions.delete(payload.executionId);
+      }
+      return NextResponse.json({ success: true });
+    }
 
     if (payload.command === 'status') {
       const execution = executions.get(payload.executionId);
@@ -173,7 +227,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, ...toResponsePayload(execution) });
     }
 
-    const { repoPath, branchRef, scriptContent } = payload;
+    const { repoPath, branchRef, scriptName, scriptContent } = payload;
 
     if (!fs.existsSync(repoPath)) {
       return NextResponse.json({ error: `Path not found: ${repoPath}` }, { status: 404 });
@@ -202,6 +256,10 @@ export async function POST(request: Request) {
 
     const execution: ScriptExecution = {
       id: executionId,
+      repoPath,
+      branchRef,
+      scriptName,
+      scriptContent,
       status: 'running',
       cancelRequested: false,
       output: '',

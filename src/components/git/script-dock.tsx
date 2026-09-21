@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useCustomScriptExecution, ScriptExecutionItem } from '@/contexts/custom-script-execution-context';
-import { cn } from '@/lib/utils';
+import { cn, getRepoFolderName } from '@/lib/utils';
 
 export function ScriptDock() {
   const { executions, openModal, cancelScript, dismissExecution } = useCustomScriptExecution();
@@ -30,8 +30,10 @@ export function ScriptDock() {
                 <div className="font-semibold truncate text-sm" title={item.scriptName}>
                   {item.scriptName}
                 </div>
-                <div className="text-[11px] opacity-60 truncate mt-0.5" title={item.branchRef}>
-                  {item.branchRef}
+                <div className="text-[11px] opacity-60 truncate mt-0.5 flex items-center gap-1.5" title={`${getRepoFolderName(item.repoPath)} • ${item.branchRef}`}>
+                  <span className="font-medium text-base-content/80 truncate max-w-[120px]">{getRepoFolderName(item.repoPath)}</span>
+                  <span>•</span>
+                  <span className="truncate">{item.branchRef}</span>
                 </div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">

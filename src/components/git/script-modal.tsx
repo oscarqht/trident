@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useCustomScriptExecution } from '@/contexts/custom-script-execution-context';
-import { cn } from '@/lib/utils';
+import { cn, getRepoFolderName } from '@/lib/utils';
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -76,9 +76,11 @@ export function ScriptModal() {
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <h3 className="font-bold text-lg truncate">Custom Script: {activeModalExecution.scriptName}</h3>
-            <p className="text-xs opacity-70 mt-1 break-all">
-              Ref: {activeModalExecution.branchRef}
-            </p>
+            <div className="text-xs opacity-70 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span>Repo: <strong className="font-medium text-base-content/90" title={activeModalExecution.repoPath}>{getRepoFolderName(activeModalExecution.repoPath)}</strong></span>
+              <span>•</span>
+              <span className="break-all">Ref: {activeModalExecution.branchRef}</span>
+            </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span

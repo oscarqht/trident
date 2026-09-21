@@ -2,9 +2,6 @@ import { Sidebar } from '@/components/layout/sidebar';
 import { Suspense } from 'react';
 import { WorkspaceRepoOpenTracker } from '@/components/workspace-repo-open-tracker';
 import { getSettings } from '@/lib/store';
-import { CustomScriptExecutionProvider } from '@/contexts/custom-script-execution-context';
-import { ScriptDock } from '@/components/git/script-dock';
-import { ScriptModal } from '@/components/git/script-modal';
 
 export default function WorkspaceLayout({
     children,
@@ -14,20 +11,16 @@ export default function WorkspaceLayout({
     const sidebarCollapsed = getSettings().sidebarCollapsed ?? false;
 
     return (
-        <CustomScriptExecutionProvider>
-            <div className="flex min-h-screen max-h-screen bg-base-100">
-                <Suspense fallback={null}>
-                    <WorkspaceRepoOpenTracker />
-                </Suspense>
-                <Suspense fallback={<div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} border-r border-base-300 min-h-screen bg-base-200/30 flex items-center justify-center`}><span className="loading loading-spinner"></span></div>}>
-                    <Sidebar initialCollapsed={sidebarCollapsed} />
-                </Suspense>
-                <main className="flex-1 overflow-auto">
-                    {children}
-                </main>
-                <ScriptDock />
-                <ScriptModal />
-            </div>
-        </CustomScriptExecutionProvider>
+        <div className="flex min-h-screen max-h-screen bg-base-100">
+            <Suspense fallback={null}>
+                <WorkspaceRepoOpenTracker />
+            </Suspense>
+            <Suspense fallback={<div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} border-r border-base-300 min-h-screen bg-base-200/30 flex items-center justify-center`}><span className="loading loading-spinner"></span></div>}>
+                <Sidebar initialCollapsed={sidebarCollapsed} />
+            </Suspense>
+            <main className="flex-1 overflow-auto">
+                {children}
+            </main>
+        </div>
     );
 }
