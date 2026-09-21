@@ -5,7 +5,9 @@ import { Suspense, useMemo, useState } from 'react';
 import { useWorkspaceTitle } from '@/hooks/use-workspace-title';
 import { useRepositories, useUpdateRepository, useGitBranches } from '@/hooks/use-git';
 import { useCredentials } from '@/hooks/use-credentials';
+import Image from 'next/image';
 import { getRepoFolderName, getRepositoryDisplayName } from '@/lib/utils';
+import { RepoEmojiPicker } from '@/components/repo-emoji-picker';
 
 function getHostname(url: string): string | null {
   try {
@@ -171,40 +173,59 @@ function WorkspaceSettingsContent() {
                             Set an emoji to represent this repository in the sidebar and repository list.
                         </p>
 
-                        <div className="form-control w-full mt-4">
-                            <label className="label">
-                                <span className="label-text">Icon (emoji)</span>
+                        <div className="mt-4">
+                            <label className="label pt-0 pb-2">
+                                <span className="label-text font-medium text-xs uppercase tracking-wider text-base-content/60">Repository Icon</span>
                             </label>
-                            <input
-                                type="text"
-                                className="input input-bordered w-24 text-center text-2xl"
-                                placeholder="🔧"
+                            <RepoEmojiPicker
                                 value={iconDraft}
-                                onChange={(e) => {
-                                    // Emoji can span multiple UTF-16 code units (e.g. flags, ZWJ sequences).
-                                    const chars = Array.from(e.target.value);
+                                onChange={(emoji) => {
                                     setIconDraftState({
                                         path: repoPath,
-                                        value: chars.slice(-1).join(''),
+                                        value: emoji,
                                         isDirty: true,
                                     });
                                 }}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && isIconDirty && !updateRepo.isPending) {
-                                        e.preventDefault();
-                                        handleIconSave();
-                                    }
+                                onClear={() => {
+                                    setIconDraftState({
+                                        path: repoPath,
+                                        value: '',
+                                        isDirty: true,
+                                    });
                                 }}
+                                disabled={updateRepo.isPending}
                             />
                         </div>
 
-                        <div className="flex items-center gap-2 mt-2">
+                        {/* Live Context Preview */}
+                        <div className="mt-4 p-3 rounded-xl bg-base-200/40 border border-base-200 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <span className="text-xs uppercase font-semibold text-base-content/50 tracking-wider shrink-0">Preview:</span>
+                                <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-base-100 border border-base-200 shadow-2xs text-sm truncate">
+                                    {iconDraft ? (
+                                        <span className="text-base leading-none shrink-0">{iconDraft}</span>
+                                    ) : (
+                                        <Image src="/icon.png" alt="Trident" width={16} height={16} className="h-4 w-4 shrink-0" />
+                                    )}
+                                    <span className="font-medium truncate">{previewName}</span>
+                                </div>
+                            </div>
+                            {isIconDirty && (
+                                <span className="text-xs text-warning flex items-center gap-1.5 font-medium shrink-0">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" />
+                                    Unsaved changes
+                                </span>
+                            )}
+                        </div>
+
+                        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-base-200">
                             <button
                                 type="button"
-                                className="btn btn-primary btn-sm"
+                                className="btn btn-primary btn-sm gap-1.5"
                                 onClick={handleIconSave}
                                 disabled={!isIconDirty || updateRepo.isPending}
                             >
+                                {updateRepo.isPending && <span className="loading loading-spinner loading-xs" />}
                                 Save Icon
                             </button>
                             <button
