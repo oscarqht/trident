@@ -15,6 +15,10 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .manage(updater::init_state())
         .invoke_handler(tauri::generate_handler![
+            updater::check_for_updates_manual,
+            updater::get_update_status,
+            updater::install_and_relaunch,
+            updater::close_update_window,
             tray::cmd_check_full_disk_access,
             tray::cmd_open_full_disk_access_settings,
         ])
@@ -166,8 +170,15 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|_app_handle, event| {
+    app.run(|app_handle, event| {
         match event {
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen { .. } => {
+                let handle = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    updater::handle_app_reopen(&handle).await;
+                });
+            }
             RunEvent::ExitRequested { code, api, .. } => {
                 if code.is_none() {
                     // Keep app running in menu bar / status bar when windows close

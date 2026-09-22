@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trident Software Update</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #0f172a;
+      --state-title: #0f172a;
+      --state-desc: #475569;
+      --highlight-text: #0f172a;
+      --spinner-border: #e2e8f0;
+      --spinner-accent: #0284c7;
+      --success-bg: rgba(16, 185, 129, 0.12);
+      --success-border: rgba(16, 185, 129, 0.35);
+      --success-stroke: #059669;
+      --error-bg: rgba(239, 68, 68, 0.12);
+      --error-border: rgba(239, 68, 68, 0.35);
+      --error-stroke: #dc2626;
+      --error-box-bg: #fef2f2;
+      --error-box-border: #fecaca;
+      --error-box-text: #b91c1c;
+      --version-current-bg: #f1f5f9;
+      --version-current-border: #cbd5e1;
+      --version-current-text: #475569;
+      --arrow-color: #94a3b8;
+      --version-new-bg: rgba(2, 132, 199, 0.1);
+      --version-new-border: rgba(2, 132, 199, 0.25);
+      --version-new-text: #0284c7;
+      --progress-track-bg: #e2e8f0;
+      --progress-track-border: #cbd5e1;
+      --progress-fill-bg: #0284c7;
+      --progress-stats-text: #64748b;
+      --notes-bg: #f8fafc;
+      --notes-border: #e2e8f0;
+      --notes-title: #64748b;
+      --notes-content: #334155;
+      --footer-border: #e2e8f0;
+      --btn-primary-bg: #0284c7;
+      --btn-primary-text: #ffffff;
+      --btn-secondary-bg: #f1f5f9;
+      --btn-secondary-border: #cbd5e1;
+      --btn-secondary-text: #334155;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --text: #f8fafc;
+        --state-title: #f8fafc;
+        --state-desc: #94a3b8;
+        --highlight-text: #e2e8f0;
+        --spinner-border: #334155;
+        --spinner-accent: #38bdf8;
+        --success-bg: rgba(16, 185, 129, 0.12);
+        --success-border: rgba(16, 185, 129, 0.3);
+        --success-stroke: #10b981;
+        --error-bg: rgba(239, 68, 68, 0.12);
+        --error-border: rgba(239, 68, 68, 0.3);
+        --error-stroke: #ef4444;
+        --error-box-bg: rgba(239, 68, 68, 0.1);
+        --error-box-border: rgba(239, 68, 68, 0.25);
+        --error-box-text: #f87171;
+        --version-current-bg: #1e293b;
+        --version-current-border: #334155;
+        --version-current-text: #94a3b8;
+        --arrow-color: #64748b;
+        --version-new-bg: rgba(56, 189, 248, 0.15);
+        --version-new-border: rgba(56, 189, 248, 0.3);
+        --version-new-text: #38bdf8;
+        --progress-track-bg: #1e293b;
+        --progress-track-border: #334155;
+        --progress-fill-bg: #38bdf8;
+        --progress-stats-text: #64748b;
+        --notes-bg: #090d16;
+        --notes-border: #1e293b;
+        --notes-title: #64748b;
+        --notes-content: #cbd5e1;
+        --footer-border: #1e293b;
+        --btn-primary-bg: #0284c7;
+        --btn-primary-text: #ffffff;
+        --btn-secondary-bg: #1e293b;
+        --btn-secondary-border: #334155;
+        --btn-secondary-text: #94a3b8;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      padding: 20px 24px;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: background-color 0.2s ease, color 0.2s ease;
+      overflow: hidden;
+    }
+
+    #content-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 16px 0;
+    }
+
+    #footer-area {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 14px;
+      border-top: 1px solid var(--footer-border);
+      transition: border-color 0.2s ease;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--spinner-border);
+      border-top: 3px solid var(--spinner-accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .badge-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .badge-success {
+      background-color: var(--success-bg);
+      border: 1px solid var(--success-border);
+    }
+
+    .badge-error {
+      background-color: var(--error-bg);
+      border: 1px solid var(--error-border);
+    }
+
+    .version-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .version-current {
+      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background-color: var(--version-current-bg);
+      color: var(--version-current-text);
+      border: 1px solid var(--version-current-border);
+      font-weight: 500;
+    }
+
+    .version-arrow {
+      color: var(--arrow-color);
+      font-size: 13px;
+    }
+
+    .version-new {
+      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background-color: var(--version-new-bg);
+      color: var(--version-new-text);
+      border: 1px solid var(--version-new-border);
+      font-weight: 600;
+    }
+
+    .state-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--state-title);
+    }
+
+    .state-desc {
+      font-size: 13px;
+      color: var(--state-desc);
+      line-height: 1.4;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 8px;
+      background-color: var(--progress-track-bg);
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid var(--progress-track-border);
+    }
+
+    .progress-fill {
+      height: 100%;
+      background-color: var(--progress-fill-bg);
+      border-radius: 4px;
+      transition: width 0.2s ease;
+    }
+
+    .progress-stats {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--progress-stats-text);
+      margin-top: 6px;
+    }
+
+    .release-notes-box {
+      width: 100%;
+      box-sizing: border-box;
+      max-height: 130px;
+      overflow-y: auto;
+      background-color: var(--notes-bg);
+      border: 1px solid var(--notes-border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      text-align: left;
+    }
+
+    .release-notes-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--notes-title);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+
+    .release-notes-body {
+      font-size: 12px;
+      color: var(--notes-content);
+      white-space: pre-wrap;
+      line-height: 1.5;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .error-box {
+      font-size: 12px;
+      color: var(--error-box-text);
+      background-color: var(--error-box-bg);
+      border: 1px solid var(--error-box-border);
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin: 8px 0 0 0;
+      max-width: 320px;
+      word-break: break-word;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background-color: var(--btn-primary-bg);
+      color: var(--btn-primary-text);
+      border: none;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      filter: brightness(1.08);
+    }
+
+    .btn-secondary {
+      background-color: var(--btn-secondary-bg);
+      color: var(--btn-secondary-text);
+      border: 1px solid var(--btn-secondary-border);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      filter: brightness(1.05);
+    }
+  </style>
+</head>
+<body>
+  <div id="content-area"></div>
+  <div id="footer-area"></div>
+
+  <script>
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+    }
+
+    // Tauri IPC wrappers
+    async function tauriInvoke(cmd, args = {}) {
+      if (window.__TAURI__?.core?.invoke) {
+        return window.__TAURI__.core.invoke(cmd, args);
+      }
+      if (window.__TAURI_INTERNALS__?.invoke) {
+        return window.__TAURI_INTERNALS__.invoke(cmd, args);
+      }
+      console.warn('Tauri invoke unavailable, falling back');
+      return null;
+    }
+
+    async function tauriListen(event, callback) {
+      if (window.__TAURI__?.event?.listen) {
+        return window.__TAURI__.event.listen(event, callback);
+      }
+      return () => {};
+    }
+
+    let currentStatus = { status: 'Checking' };
+    let isInstalling = false;
+
+    function render(status) {
+      const content = document.getElementById('content-area');
+      const footer = document.getElementById('footer-area');
+
+      // 1. Content Area
+      if (status.status === 'Checking') {
+        content.innerHTML = `
+          <div style="display:flex; flex-direction:column; align-items:center; text-align:center; max-width:340px;">
+            <div class="spinner"></div>
+            <p class="state-title" style="margin: 14px 0 6px 0;">Checking for updates...</p>
+            <p class="state-desc">Contacting release server for the latest version</p>
+          </div>
+        `;
+      } else if (status.status === 'UpToDate') {
+        const ver = status.data?.current_version || '';
+        content.innerHTML = `
+          <div style="display:flex; flex-direction:column; align-items:center; text-align:center; max-width:340px;">
+            <div class="badge-icon badge-success">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--success-stroke)" stroke-width="2.5">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </div>
+            <p class="state-title" style="margin: 14px 0 6px 0;">You're up to date!</p>
+            <p class="state-desc">Trident <strong style="color: var(--highlight-text);">v${ver}</strong> is currently the newest version available.</p>
+          </div>
+        `;
+      } else if (status.status === 'Downloading') {
+        const d = status.data || {};
+        const pct = Math.max(0, Math.min(d.percent || 0, 100));
+        const barWidth = Math.max(5, pct);
+        const downloadedStr = formatBytes(d.downloaded || 0);
+        const totalStr = d.total ? ` / ${formatBytes(d.total)}` : '';
+
+        content.innerHTML = `
+          <div style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+            <div class="version-container">
+              <span class="version-current">v${d.current_version || ''}</span>
+              <span class="version-arrow">→</span>
+              <span class="version-new">v${d.version || ''}</span>
+            </div>
+            <p class="state-title" style="margin: 6px 0 12px 0;">Downloading update...</p>
+            <div class="progress-track">
+              <div class="progress-fill" style="width: ${barWidth}%;"></div>
+            </div>
+            <div class="progress-stats">
+              <span>${pct}%</span>
+              <span>${downloadedStr}${totalStr}</span>
+            </div>
+          </div>
+        `;
+      } else if (status.status === 'Downloaded') {
+        const d = status.data || {};
+        const releaseNotesHtml = d.body ? `
+          <div class="release-notes-box">
+            <div class="release-notes-title">Release Notes:</div>
+            <div class="release-notes-body">${escapeHtml(d.body)}</div>
+          </div>
+        ` : `
+          <p class="state-desc">Download completed. Click below to install and relaunch Trident immediately.</p>
+        `;
+
+        content.innerHTML = `
+          <div style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+            <div class="version-container">
+              <span class="version-current">v${d.current_version || ''}</span>
+              <span class="version-arrow">→</span>
+              <span class="version-new">v${d.version || ''}</span>
+            </div>
+            <p class="state-title" style="margin: 6px 0 10px 0;">New version ready to install</p>
+            ${releaseNotesHtml}
+          </div>
+        `;
+      } else if (status.status === 'Error') {
+        const msg = status.data?.message || 'Unknown error occurred.';
+        content.innerHTML = `
+          <div style="display:flex; flex-direction:column; align-items:center; text-align:center; max-width:340px;">
+            <div class="badge-icon badge-error">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--error-stroke)" stroke-width="2.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+            <p class="state-title" style="margin: 14px 0 6px 0;">Update Check Failed</p>
+            <p class="error-box">${escapeHtml(msg)}</p>
+          </div>
+        `;
+      } else {
+        content.innerHTML = `
+          <div style="display:flex; flex-direction:column; align-items:center; text-align:center; max-width:340px;">
+            <p class="state-title">Update Service Idle</p>
+          </div>
+        `;
+      }
+
+      // 2. Footer Area
+      if (status.status === 'Downloaded') {
+        footer.innerHTML = `
+          <button id="btn-later" class="btn btn-secondary" ${isInstalling ? 'disabled' : ''}>Later</button>
+          <button id="btn-install" class="btn btn-primary" ${isInstalling ? 'disabled' : ''}>
+            ${isInstalling ? 'Restarting...' : 'Install & Relaunch'}
+          </button>
+        `;
+        document.getElementById('btn-later')?.addEventListener('click', handleClose);
+        document.getElementById('btn-install')?.addEventListener('click', handleInstall);
+      } else if (status.status === 'Error') {
+        footer.innerHTML = `
+          <button id="btn-close" class="btn btn-secondary">Close</button>
+          <button id="btn-retry" class="btn btn-primary">Check Again</button>
+        `;
+        document.getElementById('btn-close')?.addEventListener('click', handleClose);
+        document.getElementById('btn-retry')?.addEventListener('click', handleRetry);
+      } else if (status.status === 'Downloading') {
+        footer.innerHTML = `
+          <button id="btn-hide" class="btn btn-secondary">Hide to Background</button>
+        `;
+        document.getElementById('btn-hide')?.addEventListener('click', handleClose);
+      } else {
+        footer.innerHTML = `
+          <button id="btn-close-default" class="btn btn-primary">Close</button>
+        `;
+        document.getElementById('btn-close-default')?.addEventListener('click', handleClose);
+      }
+    }
+
+    function escapeHtml(text) {
+      const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      };
+      return String(text).replace(/[&<>"']/g, m => map[m]);
+    }
+
+    async function handleClose() {
+      try {
+        await tauriInvoke('close_update_window');
+      } catch (e) {
+        console.error('Failed to close window:', e);
+      }
+    }
+
+    async function handleInstall() {
+      isInstalling = true;
+      render(currentStatus);
+      try {
+        await tauriInvoke('install_and_relaunch');
+      } catch (err) {
+        isInstalling = false;
+        currentStatus = {
+          status: 'Error',
+          data: { message: typeof err === 'string' ? err : err?.message || 'Failed to install update.' }
+        };
+        render(currentStatus);
+      }
+    }
+
+    async function handleRetry() {
+      currentStatus = { status: 'Checking' };
+      render(currentStatus);
+      try {
+        await tauriInvoke('check_for_updates_manual');
+      } catch (err) {
+        currentStatus = {
+          status: 'Error',
+          data: { message: typeof err === 'string' ? err : err?.message || 'Failed to check updates.' }
+        };
+        render(currentStatus);
+      }
+    }
+
+    // Initialization
+    async function init() {
+      render(currentStatus);
+
+      try {
+        const res = await tauriInvoke('get_update_status');
+        if (res) {
+          currentStatus = res;
+          render(currentStatus);
+          if (res.status === 'Idle') {
+            tauriInvoke('check_for_updates_manual').catch(console.error);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to get update status:', e);
+      }
+
+      await tauriListen('trident://update-status', (event) => {
+        if (event && event.payload) {
+          currentStatus = event.payload;
+          render(currentStatus);
+        }
+      });
+
+      window.addEventListener('focus', async () => {
+        try {
+          const res = await tauriInvoke('get_update_status');
+          if (res) {
+            currentStatus = res;
+            render(currentStatus);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      });
+
+      // Poll periodically while Checking or Downloading to guarantee UI stays in sync
+      setInterval(async () => {
+        if (currentStatus.status === 'Checking' || currentStatus.status === 'Downloading') {
+          try {
+            const res = await tauriInvoke('get_update_status');
+            if (res && JSON.stringify(res) !== JSON.stringify(currentStatus)) {
+              currentStatus = res;
+              render(currentStatus);
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      }, 1000);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>
