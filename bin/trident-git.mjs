@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import net from "node:net";
@@ -14,6 +14,91 @@ const APP_ROOT = path.resolve(__dirname, "..");
 const require = createRequire(import.meta.url);
 const NEXT_BIN = require.resolve("next/dist/bin/next");
 const DEFAULT_PORT = 3100;
+
+// Augment process.env.PATH with user tool directories (bun, cargo, pnpm, etc.)
+(function augmentPath() {
+  try {
+    const homeDir = os.homedir();
+    const delimiter = path.delimiter;
+    const currentPaths = (process.env.PATH || "").split(delimiter).filter(Boolean);
+    const candidateDirs = [];
+
+    if (process.platform !== "win32") {
+      try {
+        const shell = process.env.SHELL || "/bin/zsh";
+        const shellPath = execSync(`${shell} -l -c 'echo -n "$PATH"'`, {
+          encoding: "utf-8",
+          timeout: 2000,
+          stdio: ["ignore", "pipe", "ignore"],
+        }).trim();
+        if (shellPath) {
+          candidateDirs.push(...shellPath.split(":").filter(Boolean));
+        }
+      } catch {}
+
+      candidateDirs.push(
+        path.join(homeDir, ".bun", "bin"),
+        path.join(homeDir, ".cargo", "bin"),
+        path.join(homeDir, ".local", "bin"),
+        path.join(homeDir, "Library", "pnpm"),
+        path.join(homeDir, ".pnpm"),
+        path.join(homeDir, ".deno", "bin"),
+        path.join(homeDir, ".config", "yarn", "global", "node_modules", ".bin"),
+        path.join(homeDir, ".yarn", "bin"),
+        path.join(homeDir, ".fnm", "current", "bin"),
+        path.join(homeDir, ".volta", "bin"),
+        path.join(homeDir, ".asdf", "shims"),
+        path.join(homeDir, ".asdf", "bin"),
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",
+        "/usr/local/sbin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin"
+      );
+    } else {
+      candidateDirs.push(
+        path.join(homeDir, ".bun", "bin"),
+        path.join(homeDir, ".cargo", "bin"),
+        path.join(homeDir, "AppData", "Local", "pnpm"),
+        path.join(homeDir, "AppData", "Roaming", "npm"),
+        "C:\\Program Files\\Git\\bin",
+        "C:\\Program Files\\Git\\usr\\bin",
+        "C:\\Program Files\\nodejs"
+      );
+    }
+
+    const seen = new Set();
+    const finalPaths = [];
+    for (const dir of candidateDirs) {
+      if (dir && !seen.has(dir)) {
+        seen.add(dir);
+        try {
+          if (fs.existsSync(dir)) {
+            finalPaths.push(dir);
+          }
+        } catch {}
+      }
+    }
+    for (const dir of currentPaths) {
+      if (dir && !seen.has(dir)) {
+        seen.add(dir);
+        finalPaths.push(dir);
+      }
+    }
+
+    if (finalPaths.length > 0) {
+      process.env.PATH = finalPaths.join(delimiter);
+    }
+
+    const bunDir = path.join(homeDir, ".bun");
+    if (!process.env.BUN_INSTALL && fs.existsSync(bunDir)) {
+      process.env.BUN_INSTALL = bunDir;
+    }
+  } catch {}
+})();
 
 // Tailscale assigns addresses from the CGNAT range 100.64.0.0/10.
 function isTailscaleIP(ip) {

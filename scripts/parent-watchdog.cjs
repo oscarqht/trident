@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 // Watchdog script to ensure Node.js server exits whenever the parent Tauri app exits.
 // Preloaded into Node.js processes via --require.
 
@@ -60,3 +61,94 @@
     timer.unref();
   }
 })();
+
+// Ensure Node.js server process has user tool directories (bun, cargo, pnpm, etc.)
+// in process.env.PATH when launched by the desktop GUI app.
+(function augmentPath() {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    const homeDir = os.homedir();
+    const delimiter = path.delimiter;
+    const currentPaths = (process.env.PATH || '').split(delimiter).filter(Boolean);
+    const candidateDirs = [];
+
+    if (process.platform !== 'win32') {
+      try {
+        const { execSync } = require('child_process');
+        const shell = process.env.SHELL || '/bin/zsh';
+        const shellPath = execSync(`${shell} -l -c 'echo -n "$PATH"'`, {
+          encoding: 'utf-8',
+          timeout: 2000,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+        if (shellPath) {
+          candidateDirs.push(...shellPath.split(':').filter(Boolean));
+        }
+      } catch {}
+
+      candidateDirs.push(
+        path.join(homeDir, '.bun', 'bin'),
+        path.join(homeDir, '.cargo', 'bin'),
+        path.join(homeDir, '.local', 'bin'),
+        path.join(homeDir, 'Library', 'pnpm'),
+        path.join(homeDir, '.pnpm'),
+        path.join(homeDir, '.deno', 'bin'),
+        path.join(homeDir, '.config', 'yarn', 'global', 'node_modules', '.bin'),
+        path.join(homeDir, '.yarn', 'bin'),
+        path.join(homeDir, '.fnm', 'current', 'bin'),
+        path.join(homeDir, '.volta', 'bin'),
+        path.join(homeDir, '.asdf', 'shims'),
+        path.join(homeDir, '.asdf', 'bin'),
+        '/opt/homebrew/bin',
+        '/opt/homebrew/sbin',
+        '/usr/local/bin',
+        '/usr/local/sbin',
+        '/usr/bin',
+        '/bin',
+        '/usr/sbin',
+        '/sbin'
+      );
+    } else {
+      candidateDirs.push(
+        path.join(homeDir, '.bun', 'bin'),
+        path.join(homeDir, '.cargo', 'bin'),
+        path.join(homeDir, 'AppData', 'Local', 'pnpm'),
+        path.join(homeDir, 'AppData', 'Roaming', 'npm'),
+        'C:\\Program Files\\Git\\bin',
+        'C:\\Program Files\\Git\\usr\\bin',
+        'C:\\Program Files\\nodejs'
+      );
+    }
+
+    const seen = new Set();
+    const finalPaths = [];
+    for (const dir of candidateDirs) {
+      if (dir && !seen.has(dir)) {
+        seen.add(dir);
+        try {
+          if (fs.existsSync(dir)) {
+            finalPaths.push(dir);
+          }
+        } catch {}
+      }
+    }
+    for (const dir of currentPaths) {
+      if (dir && !seen.has(dir)) {
+        seen.add(dir);
+        finalPaths.push(dir);
+      }
+    }
+
+    if (finalPaths.length > 0) {
+      process.env.PATH = finalPaths.join(delimiter);
+    }
+
+    const bunDir = path.join(homeDir, '.bun');
+    if (!process.env.BUN_INSTALL && fs.existsSync(bunDir)) {
+      process.env.BUN_INSTALL = bunDir;
+    }
+  } catch {}
+})();
+

@@ -3,6 +3,7 @@ import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process';
 import fs from 'node:fs';
 import { z } from 'zod';
 import { GitService } from '@/lib/git';
+import { getAugmentedEnv } from '@/lib/platform-utils';
 
 export const runtime = 'nodejs';
 
@@ -249,7 +250,7 @@ export async function POST(request: Request) {
     const executionId = crypto.randomUUID();
     const child = spawn('bash', ['-s'], {
       cwd: repoPath,
-      env: process.env,
+      env: getAugmentedEnv(),
       stdio: 'pipe',
       detached: process.platform !== 'win32',
     });

@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, unlink, access, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { tmpdir } from 'node:os';
+import { getAugmentedEnv } from './platform-utils';
 
 const execFileAsync = promisify(execFile);
 
@@ -51,7 +52,7 @@ export function getGit(repoPath: string): SimpleGit {
     
     // Configure git to not prompt for credentials - fail instead of hang
     git.env({
-      ...process.env,
+      ...getAugmentedEnv(),
       GIT_TERMINAL_PROMPT: '0',
       GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=no',
     });
@@ -100,7 +101,7 @@ export class GitService {
     });
 
     git.env({
-      ...process.env,
+      ...getAugmentedEnv(),
       GIT_TERMINAL_PROMPT: '0',
       GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=no',
     });
@@ -1401,7 +1402,7 @@ export class GitService {
       });
 
       tempGit.env({
-        ...process.env,
+        ...getAugmentedEnv(),
         GIT_TERMINAL_PROMPT: '0',
         GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=no',
       });

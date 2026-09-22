@@ -169,25 +169,97 @@ pub fn discover_node_binary() -> Option<PathBuf> {
     None
 }
 
-/// Build an augmented PATH environment string so simple-git can find 'git' and 'node'
-fn augmented_path() -> String {
-    let mut paths = Vec::new();
-    if let Ok(existing) = std::env::var("PATH") {
-        paths.push(existing);
+/// Query user login shell for PATH on Unix (GUI apps on macOS don't inherit terminal PATH)
+#[cfg(unix)]
+fn get_shell_path() -> Option<String> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    if let Ok(output) = std::process::Command::new(&shell)
+        .args(["-l", "-c", "echo -n \"$PATH\""])
+        .output()
+    {
+        if output.status.success() {
+            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path_str.is_empty() {
+                return Some(path_str);
+            }
+        }
     }
-    // Prepend standard tool directories
-    paths.push("/opt/homebrew/bin".to_string());
-    paths.push("/usr/local/bin".to_string());
-    paths.push("/usr/bin".to_string());
-    paths.push("/bin".to_string());
+    None
+}
+
+/// Build an augmented PATH environment string so child processes (git, node, bun, scripts) can be found
+fn augmented_path() -> String {
+    let mut candidate_paths: Vec<PathBuf> = Vec::new();
+
+    #[cfg(unix)]
+    {
+        if let Some(shell_path) = get_shell_path() {
+            for p in std::env::split_paths(&shell_path) {
+                candidate_paths.push(p);
+            }
+        }
+    }
 
     if let Some(home) = dirs::home_dir() {
-        paths.push(home.join(".nvm").to_string_lossy().to_string());
-        paths.push(home.join(".fnm/current/bin").to_string_lossy().to_string());
-        paths.push(home.join(".volta/bin").to_string_lossy().to_string());
+        candidate_paths.push(home.join(".bun/bin"));
+        candidate_paths.push(home.join(".cargo/bin"));
+        candidate_paths.push(home.join(".local/bin"));
+        candidate_paths.push(home.join("Library/pnpm"));
+        candidate_paths.push(home.join(".pnpm"));
+        candidate_paths.push(home.join(".deno/bin"));
+        candidate_paths.push(home.join(".config/yarn/global/node_modules/.bin"));
+        candidate_paths.push(home.join(".yarn/bin"));
+        candidate_paths.push(home.join(".fnm/current/bin"));
+        candidate_paths.push(home.join(".volta/bin"));
+        candidate_paths.push(home.join(".asdf/shims"));
+        candidate_paths.push(home.join(".asdf/bin"));
+
+        // Check NVM node versions
+        let nvm_versions = home.join(".nvm/versions/node");
+        if nvm_versions.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(nvm_versions) {
+                let mut versions: Vec<PathBuf> = entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.path().join("bin"))
+                    .filter(|p| p.is_dir())
+                    .collect();
+                versions.sort();
+                for ver_bin in versions.into_iter().rev() {
+                    candidate_paths.push(ver_bin);
+                }
+            }
+        }
     }
 
-    paths.join(":")
+    // Standard Unix tool directories
+    candidate_paths.push(PathBuf::from("/opt/homebrew/bin"));
+    candidate_paths.push(PathBuf::from("/opt/homebrew/sbin"));
+    candidate_paths.push(PathBuf::from("/usr/local/bin"));
+    candidate_paths.push(PathBuf::from("/usr/local/sbin"));
+    candidate_paths.push(PathBuf::from("/usr/bin"));
+    candidate_paths.push(PathBuf::from("/bin"));
+    candidate_paths.push(PathBuf::from("/usr/sbin"));
+    candidate_paths.push(PathBuf::from("/sbin"));
+
+    if let Ok(existing) = std::env::var("PATH") {
+        for p in std::env::split_paths(&existing) {
+            candidate_paths.push(p);
+        }
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    let mut final_paths = Vec::new();
+
+    for path in candidate_paths {
+        if path.is_dir() && seen.insert(path.clone()) {
+            final_paths.push(path);
+        }
+    }
+
+    std::env::join_paths(final_paths)
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string()
 }
 
 enum ServerEntry {
@@ -320,6 +392,20 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
         format!("{existing_options} {require_opt}")
     };
     cmd.env("NODE_OPTIONS", node_options);
+
+    if let Some(home) = dirs::home_dir() {
+        let bun_dir = home.join(".bun");
+        if bun_dir.is_dir() {
+            cmd.env("BUN_INSTALL", &bun_dir);
+        }
+        let pnpm_darwin = home.join("Library/pnpm");
+        let pnpm_general = home.join(".pnpm");
+        if pnpm_darwin.is_dir() {
+            cmd.env("PNPM_HOME", &pnpm_darwin);
+        } else if pnpm_general.is_dir() {
+            cmd.env("PNPM_HOME", &pnpm_general);
+        }
+    }
 
     match entry {
         ServerEntry::Standalone { app_root, script } => {

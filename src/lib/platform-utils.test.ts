@@ -2,7 +2,8 @@ import { describe, it, after, mock } from 'node:test';
 import assert from 'node:assert';
 import os from 'node:os';
 import path from 'node:path';
-import { getAppDataDir } from './platform-utils';
+import fs from 'node:fs';
+import { getAppDataDir, getAugmentedPath, getAugmentedEnv, ensureAugmentedProcessPath } from './platform-utils';
 
 describe('getAppDataDir', () => {
   const originalPlatform = process.platform;
@@ -57,5 +58,51 @@ describe('getAppDataDir', () => {
 
     const expected = path.join('/custom/config', 'trident');
     assert.strictEqual(getAppDataDir(), expected);
+  });
+});
+
+describe('augmented path and environment', () => {
+  it('should return a non-empty augmented PATH', () => {
+    const augmentedPath = getAugmentedPath();
+    assert.ok(typeof augmentedPath === 'string' && augmentedPath.length > 0);
+  });
+
+  it('should include bun/bin in augmented path if it exists locally', () => {
+    const homeDir = os.homedir();
+    const bunBin = path.join(homeDir, '.bun', 'bin');
+    if (fs.existsSync(bunBin)) {
+      const augmentedPath = getAugmentedPath();
+      const parts = augmentedPath.split(path.delimiter);
+      assert.ok(
+        parts.includes(bunBin),
+        `Expected ${augmentedPath} to include ${bunBin}`
+      );
+    }
+  });
+
+  it('should return augmented environment with PATH and BUN_INSTALL', () => {
+    const env = getAugmentedEnv();
+    assert.ok(env.PATH);
+    const homeDir = os.homedir();
+    const bunDir = path.join(homeDir, '.bun');
+    if (fs.existsSync(bunDir)) {
+      assert.strictEqual(env.BUN_INSTALL, bunDir);
+    }
+  });
+
+  it('should update process.env.PATH when ensureAugmentedProcessPath is called', () => {
+    const originalPath = process.env.PATH;
+    try {
+      process.env.PATH = '/usr/bin:/bin';
+      ensureAugmentedProcessPath();
+      assert.ok(process.env.PATH.length > 0);
+      const homeDir = os.homedir();
+      const bunBin = path.join(homeDir, '.bun', 'bin');
+      if (fs.existsSync(bunBin)) {
+        assert.ok(process.env.PATH.split(path.delimiter).includes(bunBin));
+      }
+    } finally {
+      process.env.PATH = originalPath;
+    }
   });
 });
