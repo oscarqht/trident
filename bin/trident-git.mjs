@@ -97,8 +97,20 @@ function runNext(args) {
       env: process.env,
     });
 
+    const cleanup = () => {
+      try {
+        child.kill("SIGTERM");
+      } catch {}
+    };
+    process.on("SIGINT", cleanup);
+    process.on("SIGTERM", cleanup);
+    process.on("exit", cleanup);
+
     child.on("error", reject);
     child.on("exit", (code, signal) => {
+      process.removeListener("SIGINT", cleanup);
+      process.removeListener("SIGTERM", cleanup);
+      process.removeListener("exit", cleanup);
       if (signal) {
         process.kill(process.pid, signal);
         return;

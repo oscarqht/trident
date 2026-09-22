@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Trident",
+  "version": "0.26.0",
+  "identifier": "com.oscarqht.trident",
+  "build": {
+    "frontendDist": "../public"
+  },
+  "app": {
+    "windows": []
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "resources": [
+      "../.next/standalone"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "10.15",
+      "infoPlist": "./Info.plist"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/oscarqht/trident/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVCRkVGQ0U5RDkyRUZDMDAKUldRQS9DN1o2ZnorV3lpQzBIckRKWWZpc1gzb2RRU0ZoUUtqSDZRU0NmYUppVEdubzBZSjRCK0QK"
+    }
+  }
+}

@@ -42,3 +42,9 @@ next-env.d.ts
 
 /data
 /verification
+
+# tauri
+src-tauri/target
+src-tauri/gen
+src-tauri/*.key
+src-tauri/*.key.pub

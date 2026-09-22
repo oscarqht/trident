@@ -23,12 +23,16 @@
   ],
   "scripts": {
     "dev": "npx gfport 3100 -- next dev --webpack -p {PORT}",
-    "build": "next build --webpack",
+    "build": "next build --webpack && node scripts/prepare-standalone.mjs",
     "prepack": "rm -rf .next && npm run build",
     "start": "next start -p 3100",
     "lint": "eslint",
     "cli": "node ./bin/trident-git.mjs",
-    "pack:preview": "npm pack --dry-run"
+    "pack:preview": "npm pack --dry-run",
+    "tauri": "tauri",
+    "app:dev": "tauri dev",
+    "app:build": "npm run build && tauri build",
+    "app:build:mac": "npm run build && tauri build --target aarch64-apple-darwin"
   },
   "keywords": [
     "git",
@@ -39,6 +43,7 @@
   "dependencies": {
     "@alexbruf/react-diff-viewer": "^3.1.5",
     "@tanstack/react-query": "^5.90.20",
+    "@tauri-apps/api": "^2.11.1",
     "clsx": "^2.1.1",
     "daisyui": "^5.5.18",
     "emoji-picker-react": "^4.22.2",
@@ -54,6 +59,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@tauri-apps/cli": "^2.11.5",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
