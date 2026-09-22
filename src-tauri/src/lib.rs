@@ -6,6 +6,12 @@ use tauri::RunEvent;
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 pub fn run() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        server::stop_server();
+        default_hook(info);
+    }));
+
     let builder = tauri::Builder::default()
         .manage(updater::init_state())
         .invoke_handler(tauri::generate_handler![
@@ -68,10 +74,90 @@ pub fn run() {
             #[cfg(unix)]
             {
                 tauri::async_runtime::spawn(async {
-                    if tokio::signal::ctrl_c().await.is_ok() {
-                        server::stop_server();
-                        std::process::exit(0);
+                    use tokio::signal::unix::{signal, SignalKind};
+                    let mut sigterm = signal(SignalKind::terminate()).ok();
+                    let mut sigquit = signal(SignalKind::quit()).ok();
+                    let mut sighup = signal(SignalKind::hangup()).ok();
+
+                    tokio::select! {
+                        _ = tokio::signal::ctrl_c() => {
+                            println!("[trident] Received SIGINT, stopping server...");
+                        }
+                        _ = async {
+                            if let Some(s) = sigterm.as_mut() {
+                                s.recv().await;
+                            } else {
+                                std::future::pending::<()>().await;
+                            }
+                        } => {
+                            println!("[trident] Received SIGTERM, stopping server...");
+                        }
+                        _ = async {
+                            if let Some(s) = sigquit.as_mut() {
+                                s.recv().await;
+                            } else {
+                                std::future::pending::<()>().await;
+                            }
+                        } => {
+                            println!("[trident] Received SIGQUIT, stopping server...");
+                        }
+                        _ = async {
+                            if let Some(s) = sighup.as_mut() {
+                                s.recv().await;
+                            } else {
+                                std::future::pending::<()>().await;
+                            }
+                        } => {
+                            println!("[trident] Received SIGHUP, stopping server...");
+                        }
                     }
+
+                    server::stop_server();
+                    std::process::exit(0);
+                });
+            }
+
+            #[cfg(windows)]
+            {
+                tauri::async_runtime::spawn(async {
+                    let mut ctrl_c = tokio::signal::windows::ctrl_c().ok();
+                    let mut ctrl_break = tokio::signal::windows::ctrl_break().ok();
+                    let mut ctrl_close = tokio::signal::windows::ctrl_close().ok();
+                    let mut ctrl_shutdown = tokio::signal::windows::ctrl_shutdown().ok();
+
+                    tokio::select! {
+                        _ = async {
+                            if let Some(s) = ctrl_c.as_mut() {
+                                s.recv().await;
+                            } else {
+                                std::future::pending::<()>().await;
+                            }
+                        } => {}
+                        _ = async {
+                            if let Some(s) = ctrl_break.as_mut() {
+                                s.recv().await;
+                            } else {
+                                std::future::pending::<()>().await;
+                            }
+                        } => {}
+                        _ = async {
+                            if let Some(s) = ctrl_close.as_mut() {
+                                s.recv().await;
+                            } else {
+                                std::future::pending::<()>().await;
+                            }
+                        } => {}
+                        _ = async {
+                            if let Some(s) = ctrl_shutdown.as_mut() {
+                                s.recv().await;
+                            } else {
+                                std::future::pending::<()>().await;
+                            }
+                        } => {}
+                    }
+
+                    server::stop_server();
+                    std::process::exit(0);
                 });
             }
 

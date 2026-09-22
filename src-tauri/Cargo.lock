@@ -4706,9 +4706,10 @@ dependencies = [
 
 [[package]]
 name = "trident"
-version = "0.30.0"
+version = "0.31.0"
 dependencies = [
  "dirs 6.0.0",
+ "libc",
  "local-ip-address",
  "open",
  "serde",

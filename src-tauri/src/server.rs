@@ -1,11 +1,26 @@
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
-use tokio::sync::Mutex;
 
-static RUNNING_PID: Mutex<Option<u32>> = Mutex::const_new(None);
+const WATCHDOG_SCRIPT: &str = include_str!("../../scripts/parent-watchdog.cjs");
+
+fn ensure_watchdog_script() -> Result<PathBuf, String> {
+    let temp_dir = std::env::temp_dir();
+    let watchdog_path = temp_dir.join("trident-parent-watchdog.cjs");
+    std::fs::write(&watchdog_path, WATCHDOG_SCRIPT)
+        .map_err(|e| format!("Failed to write watchdog script to {:?}: {e}", watchdog_path))?;
+    Ok(watchdog_path)
+}
+
+pub struct ServerProcess {
+    pub pid: u32,
+    pub child: std::process::Child,
+}
+
+static SERVER_PROCESS: Mutex<Option<ServerProcess>> = Mutex::new(None);
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 
 /// Tailscale assigns addresses from the CGNAT range 100.64.0.0/10 (100.64.0.0 - 100.127.255.255).
@@ -281,7 +296,30 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
         "Could not find an available local port in range 3100-3150.".to_string()
     })?;
 
+    // Ensure any previously running server instance is stopped
+    stop_server();
+    SHUTTING_DOWN.store(false, Ordering::SeqCst);
+
+    let watchdog_path = ensure_watchdog_script()?;
+    let parent_pid = std::process::id();
+
     let mut cmd = std::process::Command::new(&node_bin);
+
+    // Keep stdin piped: when the Tauri GUI app terminates (by any means, including crash or SIGKILL),
+    // the OS kernel closes the pipe, immediately sending EOF to the child Node process.
+    cmd.stdin(std::process::Stdio::piped());
+    cmd.env("TRIDENT_PARENT_PID", parent_pid.to_string());
+
+    // Configure NODE_OPTIONS so the watchdog script is preloaded into the root
+    // Node process and any sub-processes (e.g. Next.js workers or CLI launcher subprocesses).
+    let existing_options = std::env::var("NODE_OPTIONS").unwrap_or_default();
+    let require_opt = format!("--require \"{}\"", watchdog_path.to_string_lossy());
+    let node_options = if existing_options.is_empty() {
+        require_opt
+    } else {
+        format!("{existing_options} {require_opt}")
+    };
+    cmd.env("NODE_OPTIONS", node_options);
 
     match entry {
         ServerEntry::Standalone { app_root, script } => {
@@ -289,7 +327,9 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
                 "[trident] Using Node: {:?}, Standalone Script: {:?}, Host: {}, Port: {}",
                 node_bin, script, host, port
             );
-            cmd.arg(&script)
+            cmd.arg("--require")
+                .arg(&watchdog_path)
+                .arg(&script)
                 .current_dir(&app_root)
                 .env("PORT", port.to_string())
                 .env("HOST", &host)
@@ -303,6 +343,8 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
                 node_bin, script, host, port
             );
             let mut args = vec![
+                "--require".to_string(),
+                watchdog_path.to_string_lossy().to_string(),
                 script.to_string_lossy().to_string(),
                 "-p".to_string(),
                 port.to_string(),
@@ -327,8 +369,17 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        // Run in new process group so child processes can be terminated cleanly
+        // Run in new process group so all child processes can be terminated together
         cmd.process_group(0);
+
+        #[cfg(target_os = "linux")]
+        unsafe {
+            cmd.pre_exec(|| {
+                // Ensure kernel sends SIGTERM to child if parent process dies on Linux
+                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                Ok(())
+            });
+        }
     }
 
     let child = cmd
@@ -337,8 +388,8 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
 
     let pid = child.id();
     {
-        let mut running = RUNNING_PID.lock().await;
-        *running = Some(pid);
+        let mut running = SERVER_PROCESS.lock().unwrap_or_else(|e| e.into_inner());
+        *running = Some(ServerProcess { pid, child });
     }
 
     println!("[trident] Spawned Next.js server (PID: {pid}) on http://{host}:{port}");
@@ -383,41 +434,79 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
     Ok((server_url, port))
 }
 
-/// Terminate the running Next.js background server
+/// Check if the spawned server child process is still running
+#[allow(dead_code)]
+pub fn is_server_process_alive() -> bool {
+    let mut guard = match SERVER_PROCESS.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    };
+    if let Some(proc) = guard.as_mut() {
+        match proc.child.try_wait() {
+            Ok(None) => true,
+            _ => false,
+        }
+    } else {
+        false
+    }
+}
+
+/// Terminate the running Next.js background server cleanly
 pub fn stop_server() {
     SHUTTING_DOWN.store(true, Ordering::SeqCst);
 
-    if let Ok(mut running) = RUNNING_PID.try_lock() {
-        if let Some(pid) = running.take() {
-            println!("[trident] Stopping Next.js server (PID: {pid})...");
+    let mut guard = match SERVER_PROCESS.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    };
 
-            #[cfg(unix)]
-            {
-                // Kill process group and pid
-                let _ = std::process::Command::new("kill")
-                    .args(["-TERM", &format!("-{pid}")])
-                    .output();
-                let _ = std::process::Command::new("kill")
-                    .args(["-TERM", &pid.to_string()])
-                    .output();
-                std::thread::sleep(Duration::from_millis(200));
-                let _ = std::process::Command::new("kill")
-                    .args(["-KILL", &format!("-{pid}")])
-                    .output();
-                let _ = std::process::Command::new("kill")
-                    .args(["-KILL", &pid.to_string()])
-                    .output();
+    if let Some(mut proc) = guard.take() {
+        let pid = proc.pid;
+        println!("[trident] Stopping Next.js server (PID: {pid})...");
+
+        // Drop stdin to send EOF to the child process's watchdog immediately
+        drop(proc.child.stdin.take());
+
+        #[cfg(unix)]
+        {
+            // Send SIGTERM directly via kernel syscall to both process group and PID
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGTERM);
+                libc::kill(pid as i32, libc::SIGTERM);
             }
 
-            #[cfg(windows)]
-            {
-                let _ = std::process::Command::new("taskkill")
-                    .args(["/F", "/T", "/PID", &pid.to_string()])
-                    .output();
+            let _ = proc.child.kill();
+
+            // Wait up to 400ms for graceful exit
+            let start = std::time::Instant::now();
+            let mut exited = false;
+            while start.elapsed() < Duration::from_millis(400) {
+                if let Ok(Some(_)) = proc.child.try_wait() {
+                    exited = true;
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
             }
 
-            println!("[trident] Server stopped.");
+            // Force kill if not exited yet
+            if !exited {
+                unsafe {
+                    libc::kill(-(pid as i32), libc::SIGKILL);
+                    libc::kill(pid as i32, libc::SIGKILL);
+                }
+                let _ = proc.child.wait();
+            }
         }
+
+        #[cfg(windows)]
+        {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .output();
+            let _ = proc.child.wait();
+        }
+
+        println!("[trident] Server stopped.");
     }
 }
 
@@ -446,5 +535,14 @@ mod tests {
             let ip: Ipv4Addr = host.parse().expect("valid IPv4");
             assert!(is_tailscale_ip(ip));
         }
+    }
+
+    #[test]
+    fn test_ensure_watchdog_script() {
+        let path = ensure_watchdog_script().expect("watchdog script created");
+        assert!(path.exists());
+        let content = std::fs::read_to_string(&path).expect("read watchdog content");
+        assert!(content.contains("initParentWatchdog"));
+        assert!(content.contains("TRIDENT_PARENT_PID"));
     }
 }
