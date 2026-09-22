@@ -1,4 +1,4 @@
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageChops
 import os
 import subprocess
 
@@ -13,38 +13,39 @@ src = Image.open('assets/trident-logo-source.png').convert('RGBA')
 bbox = src.getbbox()
 trident_cropped = src.crop(bbox)
 w, h = trident_cropped.size
-_, _, _, a = trident_cropped.split()
 
 # 1. App Icon (1024x1024 master)
-# Pure white squircle with NO outline/grey padding, centered pure black trident with NO padding (edge-to-edge)
+# Pure white background squircle, centered trident with NO padding (edge-to-edge), keeping original icon color
 size = 1024
+radius = int(size * 0.223)  # Apple standard squircle corner ratio (~228px on 1024)
+
 app_icon = Image.new('RGBA', (size, size), (0, 0, 0, 0))
 draw = ImageDraw.Draw(app_icon)
-radius = int(size * 0.223)  # Apple standard squircle corner ratio (~228px on 1024)
 draw.rounded_rectangle([0, 0, size - 1, size - 1], radius=radius, fill=(255, 255, 255, 255))
 
-# Pure black trident: RGB = (0, 0, 0), with alpha channel preserved
-black_trident = Image.merge('RGBA', (
-    Image.new('L', (w, h), 0),
-    Image.new('L', (w, h), 0),
-    Image.new('L', (w, h), 0),
-    a
-))
-
-# Scale to fit canvas with 0 padding (touching top/bottom edge)
+# Scale to fit canvas with 0 padding (touching top/bottom or left/right edge)
 scale = float(size) / max(w, h)
-nw, nh = int(w * scale), int(h * scale)
-trident_resized = black_trident.resize((nw, nh), Image.Resampling.LANCZOS)
+nw, nh = int(round(w * scale)), int(round(h * scale))
+trident_resized = trident_cropped.resize((nw, nh), Image.Resampling.LANCZOS)
 ox = (size - nw) // 2
 oy = (size - nh) // 2
 
 trident_layer = Image.new('RGBA', (size, size), (0, 0, 0, 0))
 trident_layer.paste(trident_resized, (ox, oy))
 app_icon = Image.alpha_composite(app_icon, trident_layer)
+
+# Mask any bleed strictly to the squircle
+squircle_mask = Image.new('L', (size, size), 0)
+mask_draw = ImageDraw.Draw(squircle_mask)
+mask_draw.rounded_rectangle([0, 0, size - 1, size - 1], radius=radius, fill=255)
+r, g, b, a = app_icon.split()
+a = ImageChops.multiply(a, squircle_mask)
+app_icon.putalpha(a)
+
 app_icon.save('assets/icon.png')
 
 # 2. Status bar / Tray icons
-# Pure white trident (RGB 255, 255, 255) on transparent background (alpha 0)
+# Keep icon color on transparent background (alpha 0)
 sizes = [
     (18, 18, 'assets/iconTemplate.png'),
     (36, 36, 'assets/iconTemplate@2x.png'),
@@ -59,30 +60,39 @@ for target_w, target_h, out_path in sizes:
     margin = 1 if target_w <= 22 else 2
     inner_dim = target_w - margin * 2
     t_scale = float(inner_dim) / max(w, h)
-    tw, th = max(1, int(w * t_scale)), max(1, int(h * t_scale))
-    a_scaled = a.resize((tw, th), Image.Resampling.LANCZOS)
+    tw, th = max(1, int(round(w * t_scale))), max(1, int(round(h * t_scale)))
+    scaled_icon = trident_cropped.resize((tw, th), Image.Resampling.LANCZOS)
     
-    white_icon = Image.merge('RGBA', (
-        Image.new('L', (tw, th), 255),
-        Image.new('L', (tw, th), 255),
-        Image.new('L', (tw, th), 255),
-        a_scaled
-    ))
-    
-    # Canvas with pure white RGB and transparent alpha so no edge fringing occurs
-    tray_canvas = Image.new('RGBA', (target_w, target_h), (255, 255, 255, 0))
+    tray_canvas = Image.new('RGBA', (target_w, target_h), (0, 0, 0, 0))
     pos_x = (target_w - tw) // 2
     pos_y = (target_h - th) // 2
-    tray_canvas.paste(white_icon, (pos_x, pos_y), white_icon)
+    tray_canvas.paste(scaled_icon, (pos_x, pos_y), scaled_icon)
     tray_canvas.save(out_path)
 
-# 3. Browser favicon and Windows ICO
+# 3. Browser favicon, Next.js app icon, and Windows ICO
 fav = app_icon.resize((64, 64), Image.Resampling.LANCZOS)
 fav.save('public/favicon.png')
+
+if os.path.exists('src/app'):
+    app_fav = app_icon.resize((256, 256), Image.Resampling.LANCZOS)
+    app_fav.save('src/app/icon.png')
 
 app_icon.save('assets/icon.ico', format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
 
 print("Running tauri icon generator for bundle assets...")
 subprocess.run(['npx', 'tauri', 'icon', 'assets/icon.png', '-o', 'src-tauri/icons'], check=True)
 
-print("All icons successfully generated!")
+# Re-save tray-icon.png in case tauri icon altered it or touched it
+for target_w, target_h, out_path in [(44, 44, 'src-tauri/icons/tray-icon.png')]:
+    margin = 2
+    inner_dim = target_w - margin * 2
+    t_scale = float(inner_dim) / max(w, h)
+    tw, th = max(1, int(round(w * t_scale))), max(1, int(round(h * t_scale)))
+    scaled_icon = trident_cropped.resize((tw, th), Image.Resampling.LANCZOS)
+    tray_canvas = Image.new('RGBA', (target_w, target_h), (0, 0, 0, 0))
+    pos_x = (target_w - tw) // 2
+    pos_y = (target_h - th) // 2
+    tray_canvas.paste(scaled_icon, (pos_x, pos_y), scaled_icon)
+    tray_canvas.save(out_path)
+
+print("All trident icons successfully generated!")

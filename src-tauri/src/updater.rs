@@ -215,27 +215,8 @@ pub async fn check_and_download_silent(app: &AppHandle) {
 
 pub async fn check_and_download_manual(app: &AppHandle) {
     let state = app.state::<UpdateState>();
-    {
+    let downloaded_version = {
         let mgr = state.0.lock().await;
-        if let UpdateStatus::Downloaded { version, .. } = &mgr.status {
-            let restart = app
-                .dialog()
-                .message(format!(
-                    "Version v{version} is downloaded and ready to install.\n\nRestart Trident now to apply the update?"
-                ))
-                .title("Trident Update Ready")
-                .buttons(MessageDialogButtons::OkCancelCustom(
-                    "Restart Now".into(),
-                    "Later".into(),
-                ))
-                .blocking_show();
-
-            if restart {
-                let _ = install_and_relaunch_inner(app).await;
-            }
-            return;
-        }
-
         if mgr.is_checking_or_downloading {
             let _ = app
                 .notification()
@@ -245,6 +226,38 @@ pub async fn check_and_download_manual(app: &AppHandle) {
                 .show();
             return;
         }
+
+        if let UpdateStatus::Downloaded { version, .. } = &mgr.status {
+            Some(version.clone())
+        } else {
+            None
+        }
+    };
+
+    if let Some(version) = downloaded_version {
+        let restart = app
+            .dialog()
+            .message(format!(
+                "Version v{version} is downloaded and ready to install.\n\nRestart Trident now to apply the update?"
+            ))
+            .title("Trident Update Ready")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Restart Now".into(),
+                "Later".into(),
+            ))
+            .blocking_show();
+
+        if restart {
+            if let Err(e) = install_and_relaunch_inner(app).await {
+                let _ = app
+                    .dialog()
+                    .message(format!("Failed to install update:\n\n{e}"))
+                    .title("Update Error")
+                    .kind(MessageDialogKind::Error)
+                    .blocking_show();
+            }
+        }
+        return;
     }
 
     {
@@ -289,17 +302,19 @@ pub async fn check_and_download_manual(app: &AppHandle) {
 
             match res {
                 Ok(bytes) => {
-                    let mut mgr = state.0.lock().await;
-                    mgr.pending_update = Some(update);
-                    mgr.downloaded_bytes = Some(bytes);
-                    mgr.status = UpdateStatus::Downloaded {
-                        version: version.clone(),
-                        current_version: current_version.clone(),
-                        body: None,
-                    };
+                    {
+                        let mut mgr = state.0.lock().await;
+                        mgr.pending_update = Some(update);
+                        mgr.downloaded_bytes = Some(bytes);
+                        mgr.status = UpdateStatus::Downloaded {
+                            version: version.clone(),
+                            current_version: current_version.clone(),
+                            body: None,
+                        };
 
-                    if let Some(tray_item) = &mgr.tray_item {
-                        let _ = tray_item.set_text(format!("Restart to Update to v{version}"));
+                        if let Some(tray_item) = &mgr.tray_item {
+                            let _ = tray_item.set_text(format!("Restart to Update to v{version}"));
+                        }
                     }
 
                     let restart = app
@@ -315,7 +330,14 @@ pub async fn check_and_download_manual(app: &AppHandle) {
                         .blocking_show();
 
                     if restart {
-                        let _ = install_and_relaunch_inner(app).await;
+                        if let Err(e) = install_and_relaunch_inner(app).await {
+                            let _ = app
+                                .dialog()
+                                .message(format!("Failed to install update:\n\n{e}"))
+                                .title("Update Error")
+                                .kind(MessageDialogKind::Error)
+                                .blocking_show();
+                        }
                     }
                 }
                 Err(e) => {
@@ -377,10 +399,14 @@ pub async fn install_and_relaunch_inner(app: &AppHandle) -> Result<(), String> {
 
     if let (Some(update), Some(bytes)) = (pending_update, downloaded_bytes) {
         println!("[trident] Installing downloaded update package...");
-        crate::server::stop_server();
-        match update.install(bytes) {
+        let install_result = tokio::task::spawn_blocking(move || update.install(bytes))
+            .await
+            .map_err(|e| format!("Install task panicked: {e}"))?;
+
+        match install_result {
             Ok(_) => {
-                println!("[trident] Update installed successfully! Relaunching app...");
+                println!("[trident] Update installed successfully! Stopping server and relaunching app...");
+                crate::server::stop_server();
                 app.restart();
             }
             Err(e) => {
