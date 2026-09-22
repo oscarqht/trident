@@ -8,6 +8,10 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 pub fn run() {
     let builder = tauri::Builder::default()
         .manage(updater::init_state())
+        .invoke_handler(tauri::generate_handler![
+            tray::cmd_check_full_disk_access,
+            tray::cmd_open_full_disk_access_settings,
+        ])
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![]),
@@ -32,7 +36,21 @@ pub fn run() {
                         if let Err(e) = tray::setup_tray(&app_handle, server_url) {
                             eprintln!("[trident] Failed to setup tray: {e}");
                         }
-                        updater::start_background_updater(app_handle);
+                        updater::start_background_updater(app_handle.clone());
+
+                        #[cfg(target_os = "macos")]
+                        {
+                            use tauri_plugin_notification::NotificationExt;
+                            if !tray::check_full_disk_access() {
+                                println!("[trident] Full Disk Access is not granted yet. Notifying user...");
+                                let _ = app_handle
+                                    .notification()
+                                    .builder()
+                                    .title("Trident Permissions")
+                                    .body("Trident needs Full Disk Access to avoid folder permission prompts when inspecting repositories. Click the status bar icon to configure.")
+                                    .show();
+                            }
+                        }
                     }
                     Err(e) => {
                         eprintln!("[trident] Failed to start server: {e}");
