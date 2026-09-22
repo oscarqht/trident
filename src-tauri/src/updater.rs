@@ -81,6 +81,7 @@ pub async fn check_and_download_silent(app: &AppHandle) {
     {
         let mut mgr = state.0.lock().await;
         mgr.is_checking_or_downloading = true;
+        mgr.status = UpdateStatus::Checking;
     }
 
     let updater = match app.updater() {
@@ -192,9 +193,19 @@ pub async fn check_and_download_silent(app: &AppHandle) {
         }
         Ok(None) => {
             println!("[trident] Auto-updater: Trident is up to date.");
+            let status = UpdateStatus::UpToDate {
+                current_version: app.package_info().version.to_string(),
+            };
+            let mut mgr = state.0.lock().await;
+            mgr.status = status;
         }
         Err(e) => {
             eprintln!("[trident] Auto-updater check error: {e}");
+            let err_status = UpdateStatus::Error {
+                message: format!("Check failed: {e}"),
+            };
+            let mut mgr = state.0.lock().await;
+            mgr.status = err_status;
         }
     }
 
