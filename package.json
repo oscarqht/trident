@@ -1,6 +1,6 @@
 {
   "name": "trident-git",
-  "version": "0.32.0",
+  "version": "0.33.0",
   "private": false,
   "description": "A modern, web-based Git client.",
   "repository": {
