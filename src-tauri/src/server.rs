@@ -8,9 +8,46 @@ use tokio::sync::Mutex;
 static RUNNING_PID: Mutex<Option<u32>> = Mutex::const_new(None);
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 
+/// Tailscale assigns addresses from the CGNAT range 100.64.0.0/10 (100.64.0.0 - 100.127.255.255).
+pub fn is_tailscale_ip(ipv4: std::net::Ipv4Addr) -> bool {
+    let octets = ipv4.octets();
+    octets[0] == 100 && (64..=127).contains(&octets[1])
+}
+
+/// Resolve the host to bind to. Looks for Tailscale IP (100.64.0.0/10), falling back to 127.0.0.1.
+pub fn resolve_host() -> String {
+    if let Ok(host) = std::env::var("HOST") {
+        if !host.trim().is_empty() {
+            return host.trim().to_string();
+        }
+    }
+    if let Ok(host) = std::env::var("HOSTNAME") {
+        if !host.trim().is_empty() {
+            return host.trim().to_string();
+        }
+    }
+
+    if let Ok(interfaces) = local_ip_address::list_afinet_netifas() {
+        for (_name, ip) in interfaces {
+            if let std::net::IpAddr::V4(ipv4) = ip {
+                if is_tailscale_ip(ipv4) {
+                    return ipv4.to_string();
+                }
+            }
+        }
+    }
+
+    "127.0.0.1".to_string()
+}
+
 /// Check if a local port is available to bind
-fn is_port_available(port: u16) -> bool {
-    // If an existing service accepts connections, the port is occupied
+fn is_port_available(port: u16, host: &str) -> bool {
+    // If an existing service accepts connections on the target host, the port is occupied
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        if std::net::TcpStream::connect((ip, port)).is_ok() {
+            return false;
+        }
+    }
     if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
         return false;
     }
@@ -28,9 +65,9 @@ fn is_port_available(port: u16) -> bool {
 }
 
 /// Find an available port starting from `start_port`
-pub fn find_available_port(start_port: u16, max_attempts: u16) -> Option<u16> {
+pub fn find_available_port(start_port: u16, max_attempts: u16, host: &str) -> Option<u16> {
     for port in start_port..(start_port + max_attempts) {
-        if is_port_available(port) {
+        if is_port_available(port, host) {
             return Some(port);
         }
     }
@@ -238,8 +275,9 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
     })?;
 
     let entry = resolve_entry_script(&app)?;
+    let host = resolve_host();
 
-    let port = find_available_port(3100, 50).ok_or_else(|| {
+    let port = find_available_port(3100, 50, &host).ok_or_else(|| {
         "Could not find an available local port in range 3100-3150.".to_string()
     })?;
 
@@ -248,25 +286,28 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
     match entry {
         ServerEntry::Standalone { app_root, script } => {
             println!(
-                "[trident] Using Node: {:?}, Standalone Script: {:?}, Port: {}",
-                node_bin, script, port
+                "[trident] Using Node: {:?}, Standalone Script: {:?}, Host: {}, Port: {}",
+                node_bin, script, host, port
             );
             cmd.arg(&script)
                 .current_dir(&app_root)
                 .env("PORT", port.to_string())
-                .env("HOSTNAME", "127.0.0.1")
+                .env("HOST", &host)
+                .env("HOSTNAME", &host)
                 .env("PATH", augmented_path())
                 .env("NODE_ENV", "production");
         }
         ServerEntry::Cli { app_root, script } => {
             println!(
-                "[trident] Using Node: {:?}, CLI Script: {:?}, Port: {}",
-                node_bin, script, port
+                "[trident] Using Node: {:?}, CLI Script: {:?}, Host: {}, Port: {}",
+                node_bin, script, host, port
             );
             let mut args = vec![
                 script.to_string_lossy().to_string(),
                 "-p".to_string(),
                 port.to_string(),
+                "-H".to_string(),
+                host.clone(),
             ];
             let build_id = app_root.join(".next/BUILD_ID");
             if !build_id.exists() {
@@ -276,6 +317,8 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
             cmd.args(&args)
                 .current_dir(&app_root)
                 .env("PORT", port.to_string())
+                .env("HOST", &host)
+                .env("HOSTNAME", &host)
                 .env("PATH", augmented_path())
                 .env("NODE_ENV", if build_id.exists() { "production" } else { "development" });
         }
@@ -298,11 +341,12 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
         *running = Some(pid);
     }
 
-    println!("[trident] Spawned Next.js server (PID: {pid}) on port {port}");
+    println!("[trident] Spawned Next.js server (PID: {pid}) on http://{host}:{port}");
 
     // Monitor process health and wait until HTTP port responds
-    let server_url = format!("http://127.0.0.1:{port}");
+    let server_url = format!("http://{host}:{port}");
     let wait_url = server_url.clone();
+    let poll_host = host.clone();
 
     tokio::task::spawn(async move {
         // Poll for server readiness
@@ -315,9 +359,12 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
                 return;
             }
 
-            if tokio::net::TcpStream::connect(("127.0.0.1", port))
+            if tokio::net::TcpStream::connect((poll_host.as_str(), port))
                 .await
                 .is_ok()
+                || tokio::net::TcpStream::connect(("127.0.0.1", port))
+                    .await
+                    .is_ok()
             {
                 ready = true;
                 break;
@@ -370,6 +417,34 @@ pub fn stop_server() {
             }
 
             println!("[trident] Server stopped.");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+
+    #[test]
+    fn test_is_tailscale_ip() {
+        assert!(is_tailscale_ip(Ipv4Addr::new(100, 64, 0, 1)));
+        assert!(is_tailscale_ip(Ipv4Addr::new(100, 99, 123, 84)));
+        assert!(is_tailscale_ip(Ipv4Addr::new(100, 127, 255, 254)));
+
+        assert!(!is_tailscale_ip(Ipv4Addr::new(100, 63, 255, 255)));
+        assert!(!is_tailscale_ip(Ipv4Addr::new(100, 128, 0, 1)));
+        assert!(!is_tailscale_ip(Ipv4Addr::new(192, 168, 1, 1)));
+        assert!(!is_tailscale_ip(Ipv4Addr::new(127, 0, 0, 1)));
+        assert!(!is_tailscale_ip(Ipv4Addr::new(10, 0, 0, 1)));
+    }
+
+    #[test]
+    fn test_resolve_host_fallback_or_tailscale() {
+        let host = resolve_host();
+        if host != "127.0.0.1" {
+            let ip: Ipv4Addr = host.parse().expect("valid IPv4");
+            assert!(is_tailscale_ip(ip));
         }
     }
 }
