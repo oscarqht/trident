@@ -136,6 +136,8 @@ export function getAugmentedPath(): string {
 /**
  * Returns a cloned process.env augmented with a comprehensive PATH and
  * tool-specific environment variables (e.g. BUN_INSTALL, PNPM_HOME).
+ * Also cleans up Trident-internal variables (watchdog scripts, parent PID)
+ * to avoid polluting or breaking child processes (npm, git hooks, custom scripts).
  */
 export function getAugmentedEnv(): NodeJS.ProcessEnv {
   const homeDir = os.homedir();
@@ -144,6 +146,20 @@ export function getAugmentedEnv(): NodeJS.ProcessEnv {
     ...process.env,
     PATH: augmentedPath,
   };
+
+  // Strip Trident internal watchdog environment variables so child processes
+  // (custom scripts, npm commands, git hooks, etc.) don't inherit them.
+  delete env.TRIDENT_PARENT_PID;
+  if (env.NODE_OPTIONS) {
+    const cleaned = env.NODE_OPTIONS
+      .replace(/(?:^|\s+)--require\s+["']?[^"']*(?:trident-)?parent-watchdog\.c?js["']?/g, '')
+      .trim();
+    if (cleaned) {
+      env.NODE_OPTIONS = cleaned;
+    } else {
+      delete env.NODE_OPTIONS;
+    }
+  }
 
   if (!env.BUN_INSTALL) {
     const bunDir = path.join(homeDir, '.bun');

@@ -105,4 +105,26 @@ describe('augmented path and environment', () => {
       process.env.PATH = originalPath;
     }
   });
+
+  it('should strip TRIDENT_PARENT_PID and trident-parent-watchdog from NODE_OPTIONS', () => {
+    const origPid = process.env.TRIDENT_PARENT_PID;
+    const origNodeOptions = process.env.NODE_OPTIONS;
+    try {
+      process.env.TRIDENT_PARENT_PID = '12345';
+      process.env.NODE_OPTIONS = '--require "/path/to/trident-parent-watchdog.cjs"';
+      const env = getAugmentedEnv();
+      assert.strictEqual(env.TRIDENT_PARENT_PID, undefined);
+      assert.strictEqual(env.NODE_OPTIONS, undefined);
+
+      process.env.NODE_OPTIONS = '--max-old-space-size=4096 --require "/tmp/trident-parent-watchdog.cjs"';
+      const env2 = getAugmentedEnv();
+      assert.strictEqual(env2.TRIDENT_PARENT_PID, undefined);
+      assert.strictEqual(env2.NODE_OPTIONS, '--max-old-space-size=4096');
+    } finally {
+      if (origPid === undefined) delete process.env.TRIDENT_PARENT_PID;
+      else process.env.TRIDENT_PARENT_PID = origPid;
+      if (origNodeOptions === undefined) delete process.env.NODE_OPTIONS;
+      else process.env.NODE_OPTIONS = origNodeOptions;
+    }
+  });
 });

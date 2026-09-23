@@ -4,6 +4,7 @@ import path from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
+import { getAugmentedEnv } from '@/lib/platform-utils';
 
 const execFileAsync = promisify(execFile);
 
@@ -16,6 +17,7 @@ async function spawnDetached(command: string, args: string[]) {
     const child = spawn(command, args, {
       detached: true,
       stdio: 'ignore',
+      env: getAugmentedEnv(),
     });
 
     child.once('error', reject);
@@ -60,9 +62,9 @@ export async function POST(request: Request) {
     }
 
     if (process.platform === 'darwin') {
-      await execFileAsync('open', ['-a', 'Terminal', resolvedPath]);
+      await execFileAsync('open', ['-a', 'Terminal', resolvedPath], { env: getAugmentedEnv() });
     } else if (process.platform === 'win32') {
-      await execFileAsync('cmd.exe', ['/c', 'start', '""', '/D', resolvedPath, 'cmd.exe']);
+      await execFileAsync('cmd.exe', ['/c', 'start', '""', '/D', resolvedPath, 'cmd.exe'], { env: getAugmentedEnv() });
     } else {
       await openTerminalOnLinux(resolvedPath);
     }

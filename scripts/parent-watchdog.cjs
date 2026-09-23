@@ -10,6 +10,20 @@
     return;
   }
 
+  // Prevent this watchdog script and parent PID from leaking to child processes
+  // spawned by Node.js (e.g. bash scripts, npm, git hooks, worker child processes).
+  delete process.env.TRIDENT_PARENT_PID;
+  if (process.env.NODE_OPTIONS) {
+    const cleaned = process.env.NODE_OPTIONS
+      .replace(/(?:^|\s+)--require\s+["']?[^"']*(?:trident-)?parent-watchdog\.c?js["']?/g, '')
+      .trim();
+    if (cleaned) {
+      process.env.NODE_OPTIONS = cleaned;
+    } else {
+      delete process.env.NODE_OPTIONS;
+    }
+  }
+
   function isProcessAlive(pid) {
     if (!pid || pid <= 1) return false;
     try {
@@ -32,10 +46,15 @@
   }
 
   // 1. Stdin pipe monitoring:
-  // Tauri attaches a piped stdin to this process and keeps the write end open.
+  // Tauri attaches a piped stdin ONLY to its direct child process and keeps the write end open.
   // When Tauri terminates for ANY reason (normal exit, SIGKILL, crash, panic),
   // the OS automatically closes the write end of the pipe, emitting 'end'/'close' to stdin.
-  if (process.stdin) {
+  // We MUST ONLY monitor stdin if:
+  // - This process is the direct child of the parent Tauri app (process.ppid === parentPid)
+  // - process.stdin is not a TTY
+  // Subprocesses (bash, npm, git, etc.) have their own stdin that may reach EOF naturally and
+  // must never cause process termination.
+  if (process.ppid === parentPid && process.stdin && !process.stdin.isTTY) {
     try {
       process.stdin.resume();
       process.stdin.on('end', terminate);
