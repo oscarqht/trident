@@ -40,6 +40,17 @@ function withCredentialsInRemoteUrl(remoteUrl: string, credentials: { username: 
 // though simple-git is lightweight.
 const gitInstances: Record<string, SimpleGit> = {};
 
+export const DEFAULT_GIT_CONFIG: string[] = [
+  'http.postBuffer=524288000',
+  'http.version=HTTP/1.1',
+];
+
+export function clearGitInstances(): void {
+  for (const key of Object.keys(gitInstances)) {
+    delete gitInstances[key];
+  }
+}
+
 export function getGit(repoPath: string): SimpleGit {
   if (!gitInstances[repoPath]) {
     const options: Partial<SimpleGitOptions> = {
@@ -47,6 +58,7 @@ export function getGit(repoPath: string): SimpleGit {
       binary: 'git',
       maxConcurrentProcesses: 6,
       trimmed: false,
+      config: [...DEFAULT_GIT_CONFIG],
     };
     const git = simpleGit(options);
     
@@ -98,6 +110,7 @@ export class GitService {
       binary: 'git',
       maxConcurrentProcesses: 2,
       trimmed: false,
+      config: [...DEFAULT_GIT_CONFIG],
     });
 
     git.env({
@@ -1853,11 +1866,7 @@ export class GitService {
         const remoteUrl = await this.getRemoteUrl(remote);
         if (remoteUrl) {
           try {
-            // Inject credentials into the URL
-            const urlObj = new URL(remoteUrl);
-            urlObj.username = credentials.username;
-            urlObj.password = credentials.token;
-            targetRemote = urlObj.toString();
+            targetRemote = withCredentialsInRemoteUrl(remoteUrl, credentials);
             console.log('[pushToRemote] Using authenticated URL for push');
           } catch (e) {
             console.warn('[pushToRemote] Failed to construct authenticated URL, falling back to remote name', e);
