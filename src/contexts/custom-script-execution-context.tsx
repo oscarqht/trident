@@ -20,13 +20,14 @@ export interface ScriptExecutionItem {
   isCanceling: boolean;
   isForceCanceling: boolean;
   isModalOpen: boolean;
+  dismissOnStop?: boolean;
 }
 
 interface CustomScriptExecutionContextType {
   executions: ScriptExecutionItem[];
   activeModalExecution: ScriptExecutionItem | null;
   startScript: (params: { repoPath: string; branchRef: string; script: RepositoryCustomScript }) => Promise<string>;
-  cancelScript: (executionId: string, force?: boolean) => Promise<void>;
+  cancelScript: (executionId: string, force?: boolean, autoDismiss?: boolean) => Promise<void>;
   openModal: (executionId: string) => void;
   minimizeModal: () => void;
   dismissExecution: (executionId: string) => void;
@@ -87,6 +88,7 @@ export function CustomScriptExecutionProvider({ children }: { children: React.Re
                 isModalOpen: local.isModalOpen,
                 isCanceling: local.isCanceling,
                 isForceCanceling: local.isForceCanceling,
+                dismissOnStop: local.dismissOnStop,
               };
             }
             return se;
@@ -196,87 +198,6 @@ export function CustomScriptExecutionProvider({ children }: { children: React.Re
     }
   }, []);
 
-  const cancelScript = useCallback(async (executionId: string, force?: boolean) => {
-    const item = executionsRef.current.find((e) => e.id === executionId);
-    if (!item) return;
-
-    setExecutions((prev) =>
-      prev.map((e) => {
-        if (e.id === executionId) {
-          return {
-            ...e,
-            isCanceling: true,
-            isForceCanceling: force ? true : e.isForceCanceling,
-          };
-        }
-        return e;
-      })
-    );
-
-    try {
-      const response = await fetch('/api/custom-scripts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          command: 'cancel',
-          executionId,
-          force: !!force,
-        }),
-      });
-
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to cancel script');
-      }
-
-      setExecutions((prev) =>
-        prev.map((e) => {
-          if (e.id === executionId) {
-            const nextStatus = result.status as ScriptExecutionStatus;
-            return {
-              ...e,
-              output: result.output,
-              status: nextStatus,
-              isCanceling: nextStatus === 'running' || nextStatus === 'starting',
-              isForceCanceling: false,
-              finishedAt: result.finishedAt || e.finishedAt,
-            };
-          }
-          return e;
-        })
-      );
-    } catch (error) {
-      setExecutions((prev) =>
-        prev.map((e) => {
-          if (e.id === executionId) {
-            return {
-              ...e,
-              isCanceling: false,
-              isForceCanceling: false,
-              output: `${e.output}\n[error] ${(error as Error).message}`,
-            };
-          }
-          return e;
-        })
-      );
-    }
-  }, []);
-
-  const openModal = useCallback((executionId: string) => {
-    setExecutions((prev) =>
-      prev.map((e) => ({
-        ...e,
-        isModalOpen: e.id === executionId,
-      }))
-    );
-  }, []);
-
-  const minimizeModal = useCallback(() => {
-    setExecutions((prev) =>
-      prev.map((e) => (e.isModalOpen ? { ...e, isModalOpen: false } : e))
-    );
-  }, []);
-
   const dismissExecution = useCallback((executionId: string) => {
     setExecutions((prev) => prev.filter((e) => e.id !== executionId));
     if (!executionId.startsWith('temp-')) {
@@ -291,6 +212,139 @@ export function CustomScriptExecutionProvider({ children }: { children: React.Re
         // ignore errors on dismiss sync
       });
     }
+  }, []);
+
+  const cancelScript = useCallback(
+    async (executionId: string, force?: boolean, autoDismiss?: boolean) => {
+      const item = executionsRef.current.find((e) => e.id === executionId);
+      if (!item) return;
+
+      const shouldDismissOnStop = autoDismiss ?? item.dismissOnStop ?? false;
+
+      if (executionId.startsWith('temp-')) {
+        dismissExecution(executionId);
+        return;
+      }
+
+      setExecutions((prev) =>
+        prev.map((e) => {
+          if (e.id === executionId) {
+            return {
+              ...e,
+              isCanceling: true,
+              isForceCanceling: force ? true : e.isForceCanceling,
+              dismissOnStop: shouldDismissOnStop,
+            };
+          }
+          return e;
+        })
+      );
+
+      try {
+        const response = await fetch('/api/custom-scripts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            command: 'cancel',
+            executionId,
+            force: !!force,
+          }),
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to cancel script');
+        }
+
+        const nextStatus = result.status as ScriptExecutionStatus;
+        const isStopped = nextStatus !== 'running' && nextStatus !== 'starting';
+
+        if (isStopped && shouldDismissOnStop) {
+          const currentItem = executionsRef.current.find((e) => e.id === executionId);
+          if (!currentItem?.isModalOpen) {
+            dismissExecution(executionId);
+            queryClient.invalidateQueries({ queryKey: ['git', item.repoPath] });
+            return;
+          }
+        }
+
+        setExecutions((prev) =>
+          prev.map((e) => {
+            if (e.id === executionId) {
+              return {
+                ...e,
+                output: result.output,
+                status: nextStatus,
+                isCanceling: nextStatus === 'running' || nextStatus === 'starting',
+                isForceCanceling: false,
+                finishedAt: result.finishedAt || e.finishedAt,
+                dismissOnStop: shouldDismissOnStop,
+              };
+            }
+            return e;
+          })
+        );
+
+        if (isStopped) {
+          queryClient.invalidateQueries({ queryKey: ['git', item.repoPath] });
+        } else if (shouldDismissOnStop) {
+          // Check quickly after 150ms to dismiss promptly without waiting for the next full poll interval
+          setTimeout(async () => {
+            const currentItem = executionsRef.current.find((e) => e.id === executionId);
+            if (!currentItem || !currentItem.dismissOnStop || currentItem.isModalOpen) return;
+            try {
+              const res = await fetch('/api/custom-scripts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  command: 'status',
+                  executionId,
+                }),
+              });
+              const data = await res.json();
+              if (res.ok && data.status !== 'running' && data.status !== 'starting') {
+                const refreshed = executionsRef.current.find((e) => e.id === executionId);
+                if (refreshed?.dismissOnStop && !refreshed?.isModalOpen) {
+                  dismissExecution(executionId);
+                  queryClient.invalidateQueries({ queryKey: ['git', item.repoPath] });
+                }
+              }
+            } catch {}
+          }, 150);
+        }
+      } catch (error) {
+        setExecutions((prev) =>
+          prev.map((e) => {
+            if (e.id === executionId) {
+              return {
+                ...e,
+                isCanceling: false,
+                isForceCanceling: false,
+                output: `${e.output}\n[error] ${(error as Error).message}`,
+              };
+            }
+            return e;
+          })
+        );
+      }
+    },
+    [dismissExecution, queryClient]
+  );
+
+  const openModal = useCallback((executionId: string) => {
+    setExecutions((prev) =>
+      prev.map((e) => ({
+        ...e,
+        isModalOpen: e.id === executionId,
+        dismissOnStop: e.id === executionId ? false : e.dismissOnStop,
+      }))
+    );
+  }, []);
+
+  const minimizeModal = useCallback(() => {
+    setExecutions((prev) =>
+      prev.map((e) => (e.isModalOpen ? { ...e, isModalOpen: false } : e))
+    );
   }, []);
 
   // Polling loop for running executions
@@ -320,6 +374,17 @@ export function CustomScriptExecutionProvider({ children }: { children: React.Re
             if (!res.ok || disposed) return;
 
             const nextStatus = data.status as ScriptExecutionStatus;
+            const isStopped = nextStatus !== 'running' && nextStatus !== 'starting';
+
+            if (isStopped && exec.dismissOnStop) {
+              const currentItem = executionsRef.current.find((e) => e.id === exec.id);
+              if (!currentItem?.isModalOpen) {
+                dismissExecution(exec.id);
+                queryClient.invalidateQueries({ queryKey: ['git', exec.repoPath] });
+                return;
+              }
+            }
+
             setExecutions((prev) =>
               prev.map((item) => {
                 if (item.id === exec.id) {
@@ -335,7 +400,7 @@ export function CustomScriptExecutionProvider({ children }: { children: React.Re
               })
             );
 
-            if (nextStatus === 'completed' || nextStatus === 'failed' || nextStatus === 'canceled') {
+            if (isStopped) {
               queryClient.invalidateQueries({ queryKey: ['git', exec.repoPath] });
             }
           } catch {
@@ -355,7 +420,7 @@ export function CustomScriptExecutionProvider({ children }: { children: React.Re
       disposed = true;
       if (timer) clearTimeout(timer);
     };
-  }, [executions, queryClient]);
+  }, [executions, queryClient, dismissExecution]);
 
   const activeModalExecution = useMemo(
     () => executions.find((e) => e.isModalOpen) || null,

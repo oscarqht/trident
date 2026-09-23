@@ -41,7 +41,9 @@ export function ScriptDock() {
                   className={cn(
                     'badge badge-xs font-medium',
                     isRunning
-                      ? 'badge-info animate-pulse'
+                      ? item.isCanceling
+                        ? 'badge-warning animate-pulse'
+                        : 'badge-info animate-pulse'
                       : item.status === 'completed'
                         ? 'badge-success'
                         : item.status === 'failed'
@@ -52,7 +54,7 @@ export function ScriptDock() {
                   )}
                 >
                   {isRunning && <span className="loading loading-spinner loading-xs mr-1 scale-75"></span>}
-                  {item.status}
+                  {item.isCanceling ? 'stopping...' : item.status}
                 </span>
 
                 {!isRunning && (
@@ -86,7 +88,7 @@ export function ScriptDock() {
                       <button
                         type="button"
                         className="btn btn-error btn-xs"
-                        onClick={() => void cancelScript(item.id, true)}
+                        onClick={() => void cancelScript(item.id, true, true)}
                         title="Force kill process immediately"
                       >
                         <span className="loading loading-spinner loading-xs mr-1 scale-75"></span>
@@ -96,7 +98,7 @@ export function ScriptDock() {
                       <button
                         type="button"
                         className="btn btn-warning btn-xs gap-1"
-                        onClick={() => void cancelScript(item.id, false)}
+                        onClick={() => void cancelScript(item.id, false, true)}
                         title="Stop process"
                       >
                         <i className="iconoir-square text-[11px]" aria-hidden="true" />
