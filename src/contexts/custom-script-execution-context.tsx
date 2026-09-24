@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { RepositoryCustomScript } from '@/lib/types';
+import { RepositoryCustomScript, Repository } from '@/lib/types';
 
 export type ScriptExecutionStatus = 'idle' | 'starting' | 'running' | 'completed' | 'failed' | 'canceled';
 
@@ -27,6 +27,7 @@ interface CustomScriptExecutionContextType {
   executions: ScriptExecutionItem[];
   activeModalExecution: ScriptExecutionItem | null;
   startScript: (params: { repoPath: string; branchRef: string; script: RepositoryCustomScript }) => Promise<string>;
+  rerunScript: (executionId: string) => Promise<string | null>;
   cancelScript: (executionId: string, force?: boolean, autoDismiss?: boolean) => Promise<void>;
   openModal: (executionId: string) => void;
   minimizeModal: () => void;
@@ -57,6 +58,7 @@ export function CustomScriptExecutionProvider({ children }: { children: React.Re
           repoPath: string;
           branchRef: string;
           scriptName: string;
+          scriptContent?: string;
           status: ScriptExecutionStatus;
           output?: string;
           startedAt: string;
@@ -66,7 +68,7 @@ export function CustomScriptExecutionProvider({ children }: { children: React.Re
           repoPath: e.repoPath,
           branchRef: e.branchRef,
           scriptName: e.scriptName,
-          scriptContent: '',
+          scriptContent: e.scriptContent || '',
           status: e.status,
           output: e.output || '',
           error: null,
@@ -197,6 +199,166 @@ export function CustomScriptExecutionProvider({ children }: { children: React.Re
       return tempId;
     }
   }, []);
+
+  const rerunScript = useCallback(
+    async (executionId: string): Promise<string | null> => {
+      const item = executionsRef.current.find((e) => e.id === executionId);
+      if (!item) return null;
+
+      let scriptContent = item.scriptContent;
+      if (!scriptContent) {
+        const repos = queryClient.getQueryData<Repository[]>(['repos']);
+        const repo = repos?.find((r) => r.path === item.repoPath);
+        const foundScript = repo?.customScripts?.find((s) => s.name === item.scriptName);
+        if (foundScript) {
+          scriptContent = foundScript.content;
+        } else {
+          try {
+            const res = await fetch('/api/repos');
+            if (res.ok) {
+              const data = await res.json();
+              const fetchedRepos = Array.isArray(data) ? data : data.repositories || data.repos || [];
+              const fetchedRepo = fetchedRepos.find((r: Repository) => r.path === item.repoPath);
+              const fetchedScript = fetchedRepo?.customScripts?.find((s: RepositoryCustomScript) => s.name === item.scriptName);
+              if (fetchedScript) {
+                scriptContent = fetchedScript.content;
+              }
+            }
+          } catch {
+            // ignore fetch errors
+          }
+        }
+      }
+
+      if (!scriptContent) {
+        setExecutions((prev) =>
+          prev.map((e) => {
+            if (e.id === executionId) {
+              return {
+                ...e,
+                error: `Could not find script content for "${item.scriptName}".`,
+              };
+            }
+            return e;
+          })
+        );
+        return null;
+      }
+
+      // If old execution is on server, dismiss it cleanly
+      if (!item.id.startsWith('temp-')) {
+        void fetch('/api/custom-scripts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            command: 'dismiss',
+            executionId: item.id,
+          }),
+        }).catch(() => {});
+      }
+
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+      // Clear output and reset status in-place so modal stays open with fresh state
+      setExecutions((prev) =>
+        prev.map((e) => {
+          if (e.id === executionId) {
+            return {
+              ...e,
+              id: tempId,
+              scriptContent,
+              status: 'starting',
+              output: '',
+              error: null,
+              startedAt: new Date().toISOString(),
+              finishedAt: null,
+              isCanceling: false,
+              isForceCanceling: false,
+              isModalOpen: true,
+            };
+          }
+          return e;
+        })
+      );
+
+      try {
+        const response = await fetch('/api/custom-scripts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            command: 'start',
+            repoPath: item.repoPath,
+            branchRef: item.branchRef,
+            scriptName: item.scriptName,
+            scriptContent,
+          }),
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to re-run script execution');
+        }
+
+        const prelude: string[] = [];
+        if (result.previousBranch && result.checkedOutBranch && result.previousBranch !== result.checkedOutBranch) {
+          prelude.push(`[info] Checked out ${result.checkedOutBranch} (from ${result.previousBranch})`);
+        }
+
+        let wasDismissed = false;
+        setExecutions((prev) => {
+          const exists = prev.some((e) => e.id === tempId);
+          if (!exists) {
+            wasDismissed = true;
+            return prev;
+          }
+          return prev.map((e) => {
+            if (e.id === tempId) {
+              return {
+                ...e,
+                id: result.executionId,
+                output: [prelude.join('\n'), result.output].filter(Boolean).join('\n'),
+                status: result.status as ScriptExecutionStatus,
+                error: null,
+              };
+            }
+            return e;
+          });
+        });
+
+        if (wasDismissed) {
+          void fetch('/api/custom-scripts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              command: 'cancel',
+              executionId: result.executionId,
+              force: true,
+            }),
+          }).catch(() => {});
+        }
+
+        return result.executionId;
+      } catch (error) {
+        const errorMessage = (error as Error).message || 'Failed to re-run script';
+        setExecutions((prev) =>
+          prev.map((e) => {
+            if (e.id === tempId) {
+              return {
+                ...e,
+                status: 'failed',
+                error: errorMessage,
+                output: `[error] ${errorMessage}`,
+                finishedAt: new Date().toISOString(),
+              };
+            }
+            return e;
+          })
+        );
+        return tempId;
+      }
+    },
+    [queryClient]
+  );
 
   const dismissExecution = useCallback((executionId: string) => {
     setExecutions((prev) => prev.filter((e) => e.id !== executionId));
@@ -390,6 +552,7 @@ export function CustomScriptExecutionProvider({ children }: { children: React.Re
                 if (item.id === exec.id) {
                   return {
                     ...item,
+                    scriptContent: (data as { scriptContent?: string }).scriptContent || item.scriptContent,
                     output: data.output,
                     status: nextStatus,
                     finishedAt: data.finishedAt || item.finishedAt,
@@ -433,6 +596,7 @@ export function CustomScriptExecutionProvider({ children }: { children: React.Re
         executions,
         activeModalExecution,
         startScript,
+        rerunScript,
         cancelScript,
         openModal,
         minimizeModal,

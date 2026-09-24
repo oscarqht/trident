@@ -82,6 +82,7 @@ function toResponsePayload(execution: ScriptExecution) {
     repoPath: execution.repoPath,
     branchRef: execution.branchRef,
     scriptName: execution.scriptName,
+    scriptContent: execution.scriptContent,
     status: execution.status,
     cancelRequested: execution.cancelRequested,
     output: execution.output,

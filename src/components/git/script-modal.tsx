@@ -27,9 +27,10 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 export function ScriptModal() {
-  const { activeModalExecution, minimizeModal, cancelScript, dismissExecution } = useCustomScriptExecution();
+  const { activeModalExecution, minimizeModal, cancelScript, dismissExecution, rerunScript } = useCustomScriptExecution();
   const [didCopy, setDidCopy] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
+  const [isRerunning, setIsRerunning] = useState(false);
   const outputPreRef = useRef<HTMLPreElement>(null);
 
   // Auto-scroll to bottom of terminal output
@@ -64,6 +65,16 @@ export function ScriptModal() {
       setTimeout(() => setDidCopy(false), 1500);
     }
   }, [activeModalExecution, isCopying]);
+
+  const handleRerun = useCallback(async () => {
+    if (!activeModalExecution || isRerunning) return;
+    setIsRerunning(true);
+    try {
+      await rerunScript(activeModalExecution.id);
+    } finally {
+      setIsRerunning(false);
+    }
+  }, [activeModalExecution, isRerunning, rerunScript]);
 
   if (!activeModalExecution) return null;
 
@@ -160,6 +171,23 @@ export function ScriptModal() {
                   </button>
                 )}
               </>
+            )}
+
+            {isFinished && (
+              <button
+                type="button"
+                className="btn btn-outline btn-sm gap-1.5"
+                onClick={() => void handleRerun()}
+                disabled={isRerunning}
+                title="Clear output and re-run this script"
+              >
+                {isRerunning ? (
+                  <span className="loading loading-spinner loading-xs"></span>
+                ) : (
+                  <i className="iconoir-refresh text-[14px]" aria-hidden="true" />
+                )}
+                Re-run
+              </button>
             )}
 
             <button
