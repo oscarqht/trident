@@ -259,7 +259,7 @@ pub fn setup_tray(
                 }
                 "quit" => {
                     crate::server::stop_server();
-                    app_handle.exit(0);
+                    std::process::exit(0);
                 }
                 _ => {}
             }

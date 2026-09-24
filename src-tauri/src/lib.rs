@@ -185,10 +185,12 @@ pub fn run() {
                     api.prevent_exit();
                 } else {
                     server::stop_server();
+                    std::process::exit(code.unwrap_or(0));
                 }
             }
             RunEvent::Exit => {
                 server::stop_server();
+                std::process::exit(0);
             }
             _ => {}
         }

@@ -440,12 +440,21 @@
       if (status.status === 'Downloaded') {
         footer.innerHTML = `
           <button id="btn-later" class="btn btn-secondary" ${isInstalling ? 'disabled' : ''}>Later</button>
+          <button id="btn-retry" class="btn btn-secondary" ${isInstalling ? 'disabled' : ''}>Check Again</button>
           <button id="btn-install" class="btn btn-primary" ${isInstalling ? 'disabled' : ''}>
             ${isInstalling ? 'Restarting...' : 'Install & Relaunch'}
           </button>
         `;
         document.getElementById('btn-later')?.addEventListener('click', handleClose);
+        document.getElementById('btn-retry')?.addEventListener('click', handleRetry);
         document.getElementById('btn-install')?.addEventListener('click', handleInstall);
+      } else if (status.status === 'UpToDate') {
+        footer.innerHTML = `
+          <button id="btn-close" class="btn btn-secondary">Close</button>
+          <button id="btn-retry" class="btn btn-primary">Check Again</button>
+        `;
+        document.getElementById('btn-close')?.addEventListener('click', handleClose);
+        document.getElementById('btn-retry')?.addEventListener('click', handleRetry);
       } else if (status.status === 'Error') {
         footer.innerHTML = `
           <button id="btn-close" class="btn btn-secondary">Close</button>

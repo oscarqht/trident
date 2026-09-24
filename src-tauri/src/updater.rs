@@ -263,10 +263,6 @@ pub async fn check_and_download_manual(app: &AppHandle) {
     let state = app.state::<UpdateState>();
     {
         let mgr = state.0.lock().await;
-        if matches!(mgr.status, UpdateStatus::Downloaded { .. }) {
-            let _ = app.emit("trident://update-status", &mgr.status);
-            return;
-        }
         if mgr.is_checking_or_downloading {
             let _ = app.emit("trident://update-status", &mgr.status);
             return;
@@ -408,7 +404,12 @@ pub async fn check_and_download_manual(app: &AppHandle) {
                 current_version: app.package_info().version.to_string(),
             };
             let mut mgr = state.0.lock().await;
+            mgr.pending_update = None;
+            mgr.downloaded_bytes = None;
             mgr.status = status.clone();
+            if let Some(tray_item) = &mgr.tray_item {
+                let _ = tray_item.set_text("Check for Updates...");
+            }
             let _ = app.emit("trident://update-status", &status);
         }
         Err(e) => {
