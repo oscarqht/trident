@@ -1228,7 +1228,7 @@ export class GitService {
     // Use -m --first-parent to handle merge commits properly:
     // - For regular commits: compares against the single parent (same behavior as before)
     // - For merge commits: compares against the first parent (the branch being merged INTO)
-    const diffStat = await this.git.raw(['diff-tree', '-m', '--first-parent', '--no-commit-id', '--name-status', '-r', commitHash]);
+    const diffStat = await this.git.raw(['show', '-m', '--first-parent', '--name-status', '--format=', commitHash]);
     const files = this.parseNameStatusDiff(diffStat);
 
     // Get the full diff for this commit
@@ -1294,7 +1294,8 @@ export class GitService {
   async getCommitFilePatch(commitHash: string, filePath: string): Promise<string> {
     try {
       // Use show to get the diff (log message suppressed by format=)
-      return await this.git.raw(['show', '--format=', commitHash, '--', filePath]);
+      // Use -m --first-parent for merge commits to show the diff against first parent
+      return await this.git.raw(['show', '-m', '--first-parent', '--format=', commitHash, '--', filePath]);
     } catch (e) {
       console.warn('Failed to get commit file diff:', e);
       return '';
