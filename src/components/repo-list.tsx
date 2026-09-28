@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { FileSystemBrowser } from './fs-browser';
 import { toast } from '@/hooks/use-toast';
 import { HomeSettingsModal } from './home-settings-modal';
-import { getRepositoryDisplayName } from '@/lib/utils';
+import { getRepositoryDisplayName, formatRelativeTime, formatFullDateTime } from '@/lib/utils';
 import { useEscapeDismiss } from '@/hooks/use-escape-dismiss';
 
 function getRemoteHostname(url: string): string | null {
@@ -69,6 +69,20 @@ export function RepoList() {
         setCloneFolderBrowserOpen(false);
         setCloneDialogOpen(false);
     };
+
+    const sortedRepos = useMemo(() => {
+        if (!repos) return [];
+        return [...repos].sort((a, b) => {
+            const aTime = a.lastOpenedAt ? new Date(a.lastOpenedAt).getTime() : 0;
+            const bTime = b.lastOpenedAt ? new Date(b.lastOpenedAt).getTime() : 0;
+            if (aTime !== bTime) {
+                return bTime - aTime;
+            }
+            const aName = getRepositoryDisplayName(a).toLowerCase();
+            const bName = getRepositoryDisplayName(b).toLowerCase();
+            return aName.localeCompare(bName);
+        });
+    }, [repos]);
     // Load settings on mount
     useEffect(() => {
         const loadSettings = async () => {
@@ -338,13 +352,14 @@ export function RepoList() {
                         <tr>
                             <th>Name</th>
                             <th>Path</th>
+                            <th>Last Active</th>
                             <th className="text-right">Action</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {repos?.length === 0 && (
+                        {sortedRepos.length === 0 && (
                             <tr>
-                                <td colSpan={3} className="text-center py-12 text-muted-foreground">
+                                <td colSpan={4} className="text-center py-12 text-muted-foreground">
                                     <div className="flex flex-col items-center gap-2">
                                         <p>No repositories found.</p>
                                         <button className="btn btn-link" onClick={() => setBrowserOpen(true)}>Add your first repository</button>
@@ -352,7 +367,7 @@ export function RepoList() {
                                 </td>
                             </tr>
                         )}
-                        {repos?.map((repo) => {
+                        {sortedRepos.map((repo) => {
                             const repoDisplayName = getRepositoryDisplayName(repo);
                             return (
                             <tr
@@ -372,6 +387,9 @@ export function RepoList() {
                                 </td>
                                 <td className="text-sm opacity-70 font-mono truncate max-w-xs" title={repo.path}>
                                     {repo.path}
+                                </td>
+                                <td className="text-sm opacity-70 whitespace-nowrap" title={formatFullDateTime(repo.lastOpenedAt)}>
+                                    {formatRelativeTime(repo.lastOpenedAt)}
                                 </td>
                                 <td className="text-right">
                                     <div className="flex items-center justify-end gap-1">

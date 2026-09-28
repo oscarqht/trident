@@ -54,6 +54,7 @@ export function addRepository(repoPath: string, name?: string, displayName?: str
     path: repoPath,
     name: name || path.basename(repoPath),
     ...(normalizedDisplayName ? { displayName: normalizedDisplayName } : {}),
+    lastOpenedAt: new Date().toISOString(),
   };
 
   repos.push(newRepo);

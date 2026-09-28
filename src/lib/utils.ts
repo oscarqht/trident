@@ -264,3 +264,62 @@ export function sanitizeBranchName(name: string): string {
   
   return sanitized;
 }
+
+/**
+ * Formats an ISO date string into a concise relative time string.
+ * Examples: "Just now", "5m ago", "2h ago", "Yesterday", "3d ago", or "Jan 15" / "Jan 15, 2025"
+ */
+export function formatRelativeTime(dateString?: string | null): string {
+  if (!dateString) return 'Never';
+
+  const date = new Date(dateString);
+  const timestamp = date.getTime();
+  if (Number.isNaN(timestamp)) return 'Never';
+
+  const now = Date.now();
+  const diffMs = now - timestamp;
+
+  // Handle slight future skew or within 1 minute
+  if (diffMs < 60 * 1000) {
+    return 'Just now';
+  }
+
+  const diffMinutes = Math.floor(diffMs / (60 * 1000));
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`;
+  }
+
+  const diffHours = Math.floor(diffMs / (60 * 60 * 1000));
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+
+  const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+  if (diffDays === 1) {
+    return 'Yesterday';
+  }
+
+  if (diffDays < 7) {
+    return `${diffDays}d ago`;
+  }
+
+  const nowDate = new Date(now);
+  const sameYear = date.getFullYear() === nowDate.getFullYear();
+
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+}
+
+/**
+ * Formats an ISO date string into a full localized date and time string for tooltips.
+ */
+export function formatFullDateTime(dateString?: string | null): string | undefined {
+  if (!dateString) return undefined;
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toLocaleString();
+}
+
