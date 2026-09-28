@@ -3468,7 +3468,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                     onChange={(e) => setForceDeleteWorktree(e.target.checked)}
                     disabled={isDeleting}
                   />
-                  <span className="label-text break-words whitespace-normal text-xs">
+                  <span className="label-text break-words whitespace-normal">
                     Force delete worktree even if it contains uncommitted changes
                   </span>
                 </label>
@@ -3482,7 +3482,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                     <span className="label-text break-words whitespace-normal">
                       {selectedTrackingUpstreams.length === 1 ? (
                         <>
-                          Delete tracking remote branch <span className="font-mono opacity-70 break-all">{selectedTrackingUpstreams[0]}</span>
+                          Delete tracking remote branch <span className="break-all">{selectedTrackingUpstreams[0]}</span>
                         </>
                       ) : (
                         <>Delete {selectedTrackingUpstreams.length} tracking remote branches</>
