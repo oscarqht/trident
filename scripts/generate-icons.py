@@ -45,7 +45,15 @@ app_icon.putalpha(a)
 app_icon.save('assets/icon.png')
 
 # 2. Status bar / Tray icons
-# Keep icon color on transparent background (alpha 0)
+# Pure white on transparent background for template & dark mode
+tray_src_path = 'assets/tray-icon-source.png' if os.path.exists('assets/tray-icon-source.png') else 'assets/trident-logo-source.png'
+tray_src = Image.open(tray_src_path).convert('RGBA')
+tray_bbox = tray_src.getbbox()
+tray_cropped = tray_src.crop(tray_bbox)
+tray_w, tray_h = tray_cropped.size
+
+_, _, _, tray_a = tray_cropped.split()
+
 sizes = [
     (18, 18, 'assets/iconTemplate.png'),
     (36, 36, 'assets/iconTemplate@2x.png'),
@@ -56,18 +64,28 @@ sizes = [
     (44, 44, 'src-tauri/icons/tray-icon.png'),
 ]
 
-for target_w, target_h, out_path in sizes:
-    margin = 1 if target_w <= 22 else 2
-    inner_dim = target_w - margin * 2
-    t_scale = float(inner_dim) / max(w, h)
-    tw, th = max(1, int(round(w * t_scale))), max(1, int(round(h * t_scale)))
-    scaled_icon = trident_cropped.resize((tw, th), Image.Resampling.LANCZOS)
-    
-    tray_canvas = Image.new('RGBA', (target_w, target_h), (0, 0, 0, 0))
-    pos_x = (target_w - tw) // 2
-    pos_y = (target_h - th) // 2
-    tray_canvas.paste(scaled_icon, (pos_x, pos_y), scaled_icon)
-    tray_canvas.save(out_path)
+def render_tray_icons():
+    for target_w, target_h, out_path in sizes:
+        margin = 1 if target_w <= 22 else 2
+        inner_dim = target_w - margin * 2
+        t_scale = float(inner_dim) / max(tray_w, tray_h)
+        tw, th = max(1, int(round(tray_w * t_scale))), max(1, int(round(tray_h * t_scale)))
+        a_scaled = tray_a.resize((tw, th), Image.Resampling.LANCZOS)
+        
+        white_icon = Image.merge('RGBA', (
+            Image.new('L', (tw, th), 255),
+            Image.new('L', (tw, th), 255),
+            Image.new('L', (tw, th), 255),
+            a_scaled
+        ))
+        
+        tray_canvas = Image.new('RGBA', (target_w, target_h), (255, 255, 255, 0))
+        pos_x = (target_w - tw) // 2
+        pos_y = (target_h - th) // 2
+        tray_canvas.paste(white_icon, (pos_x, pos_y), white_icon)
+        tray_canvas.save(out_path)
+
+render_tray_icons()
 
 # 3. Browser favicon, Next.js app icon, and Windows ICO
 fav = app_icon.resize((64, 64), Image.Resampling.LANCZOS)
@@ -83,16 +101,6 @@ print("Running tauri icon generator for bundle assets...")
 subprocess.run(['npx', 'tauri', 'icon', 'assets/icon.png', '-o', 'src-tauri/icons'], check=True)
 
 # Re-save tray-icon.png in case tauri icon altered it or touched it
-for target_w, target_h, out_path in [(44, 44, 'src-tauri/icons/tray-icon.png')]:
-    margin = 2
-    inner_dim = target_w - margin * 2
-    t_scale = float(inner_dim) / max(w, h)
-    tw, th = max(1, int(round(w * t_scale))), max(1, int(round(h * t_scale)))
-    scaled_icon = trident_cropped.resize((tw, th), Image.Resampling.LANCZOS)
-    tray_canvas = Image.new('RGBA', (target_w, target_h), (0, 0, 0, 0))
-    pos_x = (target_w - tw) // 2
-    pos_y = (target_h - th) // 2
-    tray_canvas.paste(scaled_icon, (pos_x, pos_y), scaled_icon)
-    tray_canvas.save(out_path)
+render_tray_icons()
 
 print("All trident icons successfully generated!")
