@@ -65,7 +65,10 @@ export async function POST(request: Request) {
     switch (action) {
       case 'commit':
         if (!data?.message) throw new Error('Commit message is required');
-        await git.commit(data.message, data.files, { initialBranch: data?.initialBranch });
+        await git.commit(data.message, data.files, {
+          initialBranch: data?.initialBranch,
+          amend: data?.amend,
+        });
         break;
       case 'push':
         // Try to resolve credentials
@@ -326,9 +329,16 @@ export async function POST(request: Request) {
         const tracking = await git.getTrackingBranch(data.branch);
         return NextResponse.json({ success: true, tracking });
       case 'get-latest-commit-message':
-        if (!data?.branch) throw new Error('Branch name is required');
-        const message = await git.getLatestCommitMessage(data.branch);
-        return NextResponse.json({ success: true, message });
+        const targetRef = data?.branch || 'HEAD';
+        const latestDetails = await git.getLatestCommitDetails(targetRef);
+        return NextResponse.json({
+          success: true,
+          message: latestDetails.message,
+          subject: latestDetails.subject,
+          body: latestDetails.body,
+          hash: latestDetails.hash,
+          isPushed: latestDetails.isPushed,
+        });
       case 'push-to-remote':
         console.log('[API] push-to-remote action received:', data);
         if (!data?.localBranch) throw new Error('Local branch is required');

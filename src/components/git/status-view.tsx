@@ -208,6 +208,11 @@ export function StatusView({ repoPath, onClose }: { repoPath: string; onClose?: 
     const [initialBranchName, setInitialBranchName] = useState('main');
     const [collapsedChangeFolders, setCollapsedChangeFolders] = useState<Set<string>>(new Set());
     const [collapsedStagedFolders, setCollapsedStagedFolders] = useState<Set<string>>(new Set());
+    const [isAmend, setIsAmend] = useState(false);
+    const [isPushed, setIsPushed] = useState(false);
+    const [draftSubject, setDraftSubject] = useState('');
+    const [draftBody, setDraftBody] = useState('');
+    const [isLoadingAmend, setIsLoadingAmend] = useState(false);
     
     // Resize logic for commit box
     const [commitBoxHeight, setCommitBoxHeight] = useState(180);
@@ -363,6 +368,40 @@ export function StatusView({ repoPath, onClose }: { repoPath: string; onClose?: 
         setSelectedFile(null);
     }
 
+    const handleToggleAmend = async (checked: boolean) => {
+        if (checked) {
+            setDraftSubject(subject);
+            setDraftBody(body);
+            setIsAmend(true);
+            setIsLoadingAmend(true);
+            try {
+                const res = await action.mutateAsync({
+                    repoPath,
+                    action: 'get-latest-commit-message',
+                    data: { branch: branches?.current || 'HEAD' },
+                });
+                if (res?.subject !== undefined) {
+                    setSubject(res.subject || '');
+                    setBody(res.body || '');
+                } else if (typeof res?.message === 'string') {
+                    const [firstLine, ...rest] = res.message.split('\n');
+                    setSubject(firstLine || '');
+                    setBody(rest.join('\n').trim());
+                }
+                setIsPushed(Boolean(res?.isPushed));
+            } catch (err) {
+                console.error('Failed to load last commit info:', err);
+            } finally {
+                setIsLoadingAmend(false);
+            }
+        } else {
+            setIsAmend(false);
+            setIsPushed(false);
+            setSubject(draftSubject);
+            setBody(draftBody);
+        }
+    };
+
     const handleCommit = async () => {
         const trimmedSubject = subject.trim();
         if (!trimmedSubject) return;
@@ -375,10 +414,17 @@ export function StatusView({ repoPath, onClose }: { repoPath: string; onClose?: 
         await action.mutateAsync({
             repoPath,
             action: 'commit',
-            data: { message: buildCommitMessage(trimmedSubject, body) },
+            data: {
+                message: buildCommitMessage(trimmedSubject, body),
+                amend: isAmend,
+            },
         });
         setSubject('');
         setBody('');
+        setDraftSubject('');
+        setDraftBody('');
+        setIsAmend(false);
+        setIsPushed(false);
         setSelectedFile(null);
     };
 
@@ -398,6 +444,10 @@ export function StatusView({ repoPath, onClose }: { repoPath: string; onClose?: 
 
         setSubject('');
         setBody('');
+        setDraftSubject('');
+        setDraftBody('');
+        setIsAmend(false);
+        setIsPushed(false);
         setSelectedFile(null);
         setFirstCommitDialogOpen(false);
     };
@@ -424,7 +474,8 @@ export function StatusView({ repoPath, onClose }: { repoPath: string; onClose?: 
     const handleCommitShortcut = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
             e.preventDefault();
-            if (staged.length > 0 && subject.trim() && !action.isPending) {
+            const canCommit = isAmend ? !!subject.trim() : (staged.length > 0 && !!subject.trim());
+            if (canCommit && !action.isPending && !isLoadingAmend) {
                 handleCommit();
             }
         }
@@ -604,7 +655,7 @@ export function StatusView({ repoPath, onClose }: { repoPath: string; onClose?: 
                         <div className="flex-1 p-3 overflow-y-auto flex flex-col gap-2">
                             <input
                                 type="text"
-                                placeholder="Commit subject..."
+                                placeholder={isAmend ? "Amend commit subject..." : "Commit subject..."}
                                 value={subject}
                                 onChange={e => setSubject(e.target.value)}
                                 onKeyDown={handleCommitShortcut}
@@ -617,21 +668,43 @@ export function StatusView({ repoPath, onClose }: { repoPath: string; onClose?: 
                                 onKeyDown={handleCommitShortcut}
                                 className="textarea textarea-bordered textarea-sm w-full text-sm resize-none font-sans flex-1 min-h-[48px]"
                             />
+                            {isAmend && isPushed && (
+                                <div className="flex items-center gap-1.5 text-xs text-warning bg-warning/10 px-2 py-1 rounded shrink-0">
+                                    <i className="iconoir-warning-triangle text-sm shrink-0" aria-hidden="true" />
+                                    <span className="truncate">Last commit was already pushed to remote. Amending will require force push.</span>
+                                </div>
+                            )}
                             <div className="flex items-center justify-between gap-2 shrink-0 pt-0.5">
-                                <span className="text-[11px] opacity-40">
-                                    <kbd className="kbd kbd-xs">⌘</kbd>+<kbd className="kbd kbd-xs">Enter</kbd> to commit
-                                </span>
+                                <div className="flex items-center gap-3">
+                                    <label className={cn(
+                                        "flex items-center gap-1.5 text-xs cursor-pointer select-none",
+                                        (isFirstCommit || action.isPending) && "opacity-40 cursor-not-allowed"
+                                    )}>
+                                        <input
+                                            type="checkbox"
+                                            className="checkbox checkbox-xs"
+                                            checked={isAmend}
+                                            disabled={isFirstCommit || action.isPending}
+                                            onChange={(e) => void handleToggleAmend(e.target.checked)}
+                                        />
+                                        <span className="font-medium">Amend</span>
+                                        {isLoadingAmend && <span className="loading loading-spinner loading-xs text-primary" />}
+                                    </label>
+                                    <span className="text-[11px] opacity-40">
+                                        <kbd className="kbd kbd-xs">⌘</kbd>+<kbd className="kbd kbd-xs">Enter</kbd> to {isAmend ? 'amend' : 'commit'}
+                                    </span>
+                                </div>
                                 <button
                                     className="btn btn-primary btn-sm"
                                     onClick={handleCommit}
-                                    disabled={staged.length === 0 || !subject.trim() || action.isPending}
+                                    disabled={(!isAmend && staged.length === 0) || !subject.trim() || action.isPending || isLoadingAmend}
                                 >
                                     {action.isPending ? (
                                         <span className="loading loading-spinner loading-xs mr-1"></span>
                                     ) : (
                                         <i className="iconoir-check text-[14px] mr-1" aria-hidden="true" />
                                     )}
-                                    Commit Changes
+                                    {isAmend ? 'Amend Commit' : 'Commit Changes'}
                                 </button>
                             </div>
                         </div>

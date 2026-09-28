@@ -250,8 +250,34 @@ export class GitService {
     } as unknown as GitLog;
   }
 
-  async getLatestCommitMessage(branch: string): Promise<string> {
-    const message = await this.git.raw(['show', '-s', '--format=%B', branch]);
+  async isCommitPushed(commitRef: string = 'HEAD'): Promise<boolean> {
+    try {
+      const raw = await this.git.raw(['branch', '-r', '--contains', commitRef]);
+      return raw.trim().length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async getLatestCommitDetails(branch?: string): Promise<{
+    hash: string;
+    subject: string;
+    body: string;
+    message: string;
+    isPushed: boolean;
+  }> {
+    const target = branch || 'HEAD';
+    const hash = (await this.git.raw(['rev-parse', target])).trim();
+    const message = (await this.git.raw(['show', '-s', '--format=%B', target])).trimEnd();
+    const subject = (await this.git.raw(['show', '-s', '--format=%s', target])).trim();
+    const body = (await this.git.raw(['show', '-s', '--format=%b', target])).trim();
+    const isPushed = await this.isCommitPushed(target);
+    return { hash, subject, body, message, isPushed };
+  }
+
+  async getLatestCommitMessage(branch?: string): Promise<string> {
+    const target = branch || 'HEAD';
+    const message = await this.git.raw(['show', '-s', '--format=%B', target]);
     return message.trimEnd();
   }
 
@@ -346,13 +372,17 @@ export class GitService {
     await this.git.raw(['symbolic-ref', 'HEAD', `refs/heads/${branch}`]);
   }
 
-  async commit(message: string, files?: string[], options: { initialBranch?: string } = {}): Promise<void> {
+  async commit(message: string, files?: string[], options: { initialBranch?: string; amend?: boolean } = {}): Promise<void> {
     await this.ensureInitialBranchForFirstCommit(options.initialBranch);
 
     if (files && files.length > 0) {
       await this.git.add(files);
     }
-    await this.git.commit(message);
+    if (options.amend) {
+      await this.git.raw(['commit', '--amend', '-m', message]);
+    } else {
+      await this.git.commit(message);
+    }
   }
 
   async stage(files: string[]): Promise<void> {

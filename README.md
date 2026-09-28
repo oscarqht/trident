@@ -10,7 +10,7 @@ A modern, web-based Git client built with Next.js. Manage your repositories, vie
 - **Visual Commit Graph** - Fork-style commit visualization with branch lanes
 - **Branch Operations** - Create, checkout, delete, rename, rebase, and merge branches
 - **Conflict Resolver** - Detect merge/rebase conflicts and resolve them with a dedicated workflow
-- **Change Staging** - Stage/unstage files individually or all at once
+- **Change Staging & Committing** - Stage/unstage files individually or all at once, create new commits, or amend the last commit with draft preservation
 - **Stash Support** - Stash, reapply, and delete stashed changes
 - **Diff Viewer** - Syntax-highlighted diff view for reviewing changes
 - **Commit History** - Browse commit history with infinite scroll and branch filtering
@@ -27,6 +27,7 @@ A modern, web-based Git client built with Next.js. Manage your repositories, vie
 #### Repository Management
 - [x] Open local repositories from a filesystem browser
 - [x] List recent repositories and reopen quickly (Command Palette)
+- [x] Sort repositories by last active time on home page
 - [x] Delete repositories from the app list (without deleting files)
 - [x] Shared repository/settings storage across app instances
 - [x] Set repository display name
@@ -46,7 +47,8 @@ A modern, web-based Git client built with Next.js. Manage your repositories, vie
 
 #### Committing
 - [x] Commit with subject + optional body
-- [x] Amend latest commit message (reword)
+- [x] Amend last commit when committing local changes (with automatic message pre-fill, draft recovery, and pushed commit warning)
+- [x] Amend latest commit message from history (reword)
 
 #### Branching, History & Graph
 - [x] Visual commit graph with branch lanes
@@ -163,7 +165,7 @@ npm start
 
 1. **Add a Repository** - Click "Add Repository" on the home page and browse to select a local Git repository
 2. **View Changes** - The workspace view shows staged and unstaged changes with diff previews
-3. **Commit Changes** - Stage files and enter a commit message (Cmd/Ctrl+Enter to commit)
+3. **Commit Changes** - Stage files and enter a commit message, or toggle "Amend" to update the previous commit (Cmd/Ctrl+Enter to commit/amend)
 4. **Browse History** - Navigate to the History tab to view the commit graph
 5. **Manage Branches** - Use the branch sidebar to switch, create, or manage branches
 
