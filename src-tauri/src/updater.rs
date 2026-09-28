@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::menu::MenuItem;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
@@ -51,19 +51,16 @@ impl Default for UpdateManager {
     }
 }
 
-pub struct UpdateState(pub Arc<tokio::sync::Mutex<UpdateManager>>);
+pub struct UpdateState(pub Arc<Mutex<UpdateManager>>);
 
 pub fn init_state() -> UpdateState {
-    UpdateState(Arc::new(tokio::sync::Mutex::new(UpdateManager::default())))
+    UpdateState(Arc::new(Mutex::new(UpdateManager::default())))
 }
 
 pub fn register_tray_item(app: &AppHandle, item: MenuItem<Wry>) {
     let state = app.state::<UpdateState>();
-    let state_arc = state.0.clone();
-    tauri::async_runtime::spawn(async move {
-        let mut mgr = state_arc.lock().await;
-        mgr.tray_item = Some(item);
-    });
+    let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    mgr.tray_item = Some(item);
 }
 
 pub fn open_or_focus_updater_window(app: &AppHandle) -> tauri::Result<()> {
@@ -71,12 +68,9 @@ pub fn open_or_focus_updater_window(app: &AppHandle) -> tauri::Result<()> {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
-        let state_arc = app.state::<UpdateState>().0.clone();
-        let handle = app.clone();
-        tauri::async_runtime::spawn(async move {
-            let mgr = state_arc.lock().await;
-            let _ = handle.emit("trident://update-status", &mgr.status);
-        });
+        let state = app.state::<UpdateState>();
+        let status = state.0.lock().unwrap_or_else(|e| e.into_inner()).status.clone();
+        let _ = app.emit("trident://update-status", &status);
         return Ok(());
     }
 
@@ -99,178 +93,22 @@ pub fn close_update_window_inner(app: &AppHandle) {
     }
 }
 
-pub async fn check_and_download_silent(app: &AppHandle) {
-    let state = app.state::<UpdateState>();
-    {
-        let mgr = state.0.lock().await;
-        if mgr.is_checking_or_downloading {
-            return;
-        }
-        if matches!(mgr.status, UpdateStatus::Downloaded { .. }) {
-            return;
-        }
+pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool) {
+    if is_manual {
+        let _ = open_or_focus_updater_window(app);
     }
-
-    {
-        let mut mgr = state.0.lock().await;
-        mgr.is_checking_or_downloading = true;
-        mgr.status = UpdateStatus::Checking;
-    }
-    let _ = app.emit("trident://update-status", UpdateStatus::Checking);
-
-    let updater = match app.updater() {
-        Ok(u) => u,
-        Err(e) => {
-            eprintln!("[trident] Failed to initialize updater: {e}");
-            let mut mgr = state.0.lock().await;
-            mgr.is_checking_or_downloading = false;
-            return;
-        }
-    };
-
-    println!("[trident] Auto-updater: checking for updates...");
-    match updater.check().await {
-        Ok(Some(update)) => {
-            println!("[trident] Auto-updater: new version available: v{}", update.version);
-            let version = update.version.clone();
-            let current_version = update.current_version.clone();
-            let body = update.body.clone();
-
-            {
-                let mut mgr = state.0.lock().await;
-                mgr.status = UpdateStatus::Downloading {
-                    version: version.clone(),
-                    current_version: current_version.clone(),
-                    body: body.clone(),
-                    downloaded: 0,
-                    total: None,
-                    percent: 0,
-                };
-            }
-            let _ = app.emit("trident://update-status", {
-                let mgr = state.0.lock().await;
-                mgr.status.clone()
-            });
-
-            let mut downloaded = 0u64;
-            let mut last_emit = std::time::Instant::now();
-            let mut last_pct = 0u32;
-            let app_clone = app.clone();
-            let version_for_cb = version.clone();
-            let curr_for_cb = current_version.clone();
-            let body_for_cb = body.clone();
-
-            let res = update
-                .download(
-                    move |chunk_length, content_length| {
-                        downloaded += chunk_length as u64;
-                        let pct = if let Some(tot) = content_length {
-                            if tot > 0 {
-                                ((downloaded as f64 / tot as f64) * 100.0) as u32
-                            } else {
-                                0
-                            }
-                        } else {
-                            0
-                        };
-
-                        if pct != last_pct || last_emit.elapsed() >= Duration::from_millis(300) {
-                            last_pct = pct;
-                            last_emit = std::time::Instant::now();
-                            let status = UpdateStatus::Downloading {
-                                version: version_for_cb.clone(),
-                                current_version: curr_for_cb.clone(),
-                                body: body_for_cb.clone(),
-                                downloaded,
-                                total: content_length,
-                                percent: pct,
-                            };
-                            let _ = app_clone.emit("trident://update-status", &status);
-                        }
-                    },
-                    || {
-                        println!("[trident] Auto-updater: download complete.");
-                    },
-                )
-                .await;
-
-            match res {
-                Ok(bytes) => {
-                    println!("[trident] Auto-updater: downloaded {} bytes successfully", bytes.len());
-                    let new_status = UpdateStatus::Downloaded {
-                        version: version.clone(),
-                        current_version: current_version.clone(),
-                        body: body.clone(),
-                    };
-
-                    {
-                        let mut mgr = state.0.lock().await;
-                        mgr.pending_update = Some(update);
-                        mgr.downloaded_bytes = Some(bytes);
-                        mgr.status = new_status.clone();
-                        if let Some(tray_item) = &mgr.tray_item {
-                            let _ = tray_item.set_text(format!("Restart to Update to v{version}"));
-                        }
-                    }
-
-                    let _ = app.emit("trident://update-status", &new_status);
-
-                    let notif_body = format!(
-                        "Version v{} is downloaded. Click here or open the status bar menu to restart.",
-                        version
-                    );
-                    let _ = app
-                        .notification()
-                        .builder()
-                        .title("Trident Update Ready")
-                        .body(notif_body)
-                        .show();
-                }
-                Err(e) => {
-                    eprintln!("[trident] Auto-updater download failed: {e}");
-                    let mut mgr = state.0.lock().await;
-                    mgr.status = UpdateStatus::Idle;
-                }
-            }
-        }
-        Ok(None) => {
-            println!("[trident] Auto-updater: Trident is up to date.");
-            let status = UpdateStatus::UpToDate {
-                current_version: app.package_info().version.to_string(),
-            };
-            let mut mgr = state.0.lock().await;
-            mgr.status = status.clone();
-            let _ = app.emit("trident://update-status", &status);
-        }
-        Err(e) => {
-            eprintln!("[trident] Auto-updater check error: {e}");
-            let err_status = UpdateStatus::Error {
-                message: format!("Check failed: {e}"),
-            };
-            let mut mgr = state.0.lock().await;
-            mgr.status = err_status.clone();
-            let _ = app.emit("trident://update-status", &err_status);
-        }
-    }
-
-    let mut mgr = state.0.lock().await;
-    mgr.is_checking_or_downloading = false;
-}
-
-pub async fn check_and_download_manual(app: &AppHandle) {
-    let _ = open_or_focus_updater_window(app);
 
     let state = app.state::<UpdateState>();
     {
-        let mgr = state.0.lock().await;
+        let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
         if mgr.is_checking_or_downloading {
             let _ = app.emit("trident://update-status", &mgr.status);
             return;
         }
-    }
+        if !is_manual && matches!(mgr.status, UpdateStatus::Downloaded { .. }) {
+            return;
+        }
 
-    {
-        let mut mgr = state.0.lock().await;
         mgr.is_checking_or_downloading = true;
         mgr.status = UpdateStatus::Checking;
     }
@@ -282,37 +120,37 @@ pub async fn check_and_download_manual(app: &AppHandle) {
             let err_msg = format!("Failed to initialize updater: {e}");
             eprintln!("[trident] {err_msg}");
             let err_status = UpdateStatus::Error { message: err_msg };
-            let mut mgr = state.0.lock().await;
-            mgr.status = err_status.clone();
-            mgr.is_checking_or_downloading = false;
+            {
+                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+                mgr.status = err_status.clone();
+                mgr.is_checking_or_downloading = false;
+            }
             let _ = app.emit("trident://update-status", &err_status);
             return;
         }
     };
 
-    println!("[trident] Manual update: checking for updates...");
+    println!("[trident] Checking for updates...");
     match updater.check().await {
         Ok(Some(update)) => {
-            println!("[trident] Manual update: new version available: v{}", update.version);
+            println!("[trident] New version available: v{}", update.version);
             let version = update.version.clone();
             let current_version = update.current_version.clone();
             let body = update.body.clone();
 
+            let initial_status = UpdateStatus::Downloading {
+                version: version.clone(),
+                current_version: current_version.clone(),
+                body: body.clone(),
+                downloaded: 0,
+                total: None,
+                percent: 0,
+            };
             {
-                let mut mgr = state.0.lock().await;
-                mgr.status = UpdateStatus::Downloading {
-                    version: version.clone(),
-                    current_version: current_version.clone(),
-                    body: body.clone(),
-                    downloaded: 0,
-                    total: None,
-                    percent: 0,
-                };
+                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+                mgr.status = initial_status.clone();
             }
-            let _ = app.emit("trident://update-status", {
-                let mgr = state.0.lock().await;
-                mgr.status.clone()
-            });
+            let _ = app.emit("trident://update-status", &initial_status);
 
             let mut downloaded = 0u64;
             let mut last_emit = std::time::Instant::now();
@@ -321,6 +159,7 @@ pub async fn check_and_download_manual(app: &AppHandle) {
             let version_for_cb = version.clone();
             let curr_for_cb = current_version.clone();
             let body_for_cb = body.clone();
+            let state_arc = state.0.clone();
 
             let res = update
                 .download(
@@ -336,7 +175,11 @@ pub async fn check_and_download_manual(app: &AppHandle) {
                             0
                         };
 
-                        if pct != last_pct || last_emit.elapsed() >= Duration::from_millis(300) {
+                        let elapsed = last_emit.elapsed();
+                        if pct == 100
+                            || (elapsed >= Duration::from_millis(100)
+                                && (pct != last_pct || elapsed >= Duration::from_millis(300)))
+                        {
                             last_pct = pct;
                             last_emit = std::time::Instant::now();
                             let status = UpdateStatus::Downloading {
@@ -347,18 +190,21 @@ pub async fn check_and_download_manual(app: &AppHandle) {
                                 total: content_length,
                                 percent: pct,
                             };
+                            if let Ok(mut mgr) = state_arc.lock() {
+                                mgr.status = status.clone();
+                            }
                             let _ = app_clone.emit("trident://update-status", &status);
                         }
                     },
                     || {
-                        println!("[trident] Manual update: download complete.");
+                        println!("[trident] Download complete.");
                     },
                 )
                 .await;
 
             match res {
                 Ok(bytes) => {
-                    println!("[trident] Manual update: downloaded {} bytes successfully", bytes.len());
+                    println!("[trident] Downloaded {} bytes successfully", bytes.len());
                     let new_status = UpdateStatus::Downloaded {
                         version: version.clone(),
                         current_version: current_version.clone(),
@@ -366,7 +212,7 @@ pub async fn check_and_download_manual(app: &AppHandle) {
                     };
 
                     {
-                        let mut mgr = state.0.lock().await;
+                        let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
                         mgr.pending_update = Some(update);
                         mgr.downloaded_bytes = Some(bytes);
                         mgr.status = new_status.clone();
@@ -389,62 +235,69 @@ pub async fn check_and_download_manual(app: &AppHandle) {
                         .show();
                 }
                 Err(e) => {
+                    eprintln!("[trident] Update download failed: {e}");
                     let err_status = UpdateStatus::Error {
                         message: format!("Download failed: {e}"),
                     };
-                    let mut mgr = state.0.lock().await;
-                    mgr.status = err_status.clone();
+                    {
+                        let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+                        mgr.status = err_status.clone();
+                    }
                     let _ = app.emit("trident://update-status", &err_status);
                 }
             }
         }
         Ok(None) => {
-            println!("[trident] Manual update: you are on the latest version.");
+            println!("[trident] Trident is up to date.");
             let status = UpdateStatus::UpToDate {
                 current_version: app.package_info().version.to_string(),
             };
-            let mut mgr = state.0.lock().await;
-            mgr.pending_update = None;
-            mgr.downloaded_bytes = None;
-            mgr.status = status.clone();
-            if let Some(tray_item) = &mgr.tray_item {
-                let _ = tray_item.set_text("Check for Updates...");
+            {
+                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+                mgr.pending_update = None;
+                mgr.downloaded_bytes = None;
+                mgr.status = status.clone();
+                if let Some(tray_item) = &mgr.tray_item {
+                    let _ = tray_item.set_text("Check for Updates...");
+                }
             }
             let _ = app.emit("trident://update-status", &status);
         }
         Err(e) => {
-            eprintln!("[trident] Manual update check error: {e}");
+            eprintln!("[trident] Update check error: {e}");
             let err_status = UpdateStatus::Error {
                 message: format!("Check failed: {e}"),
             };
-            let mut mgr = state.0.lock().await;
-            mgr.status = err_status.clone();
+            {
+                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+                mgr.status = err_status.clone();
+            }
             let _ = app.emit("trident://update-status", &err_status);
         }
     }
 
-    let mut mgr = state.0.lock().await;
+    let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
     mgr.is_checking_or_downloading = false;
 }
 
 pub async fn handle_check_updates_click(app: &AppHandle) {
     let is_downloaded = {
         let state = app.state::<UpdateState>();
-        let mgr = state.0.lock().await;
+        let mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
         matches!(mgr.status, UpdateStatus::Downloaded { .. })
     };
 
     if is_downloaded {
         let _ = open_or_focus_updater_window(app);
     } else {
-        check_and_download_manual(app).await;
+        check_and_download(app, true, false).await;
     }
 }
 
 pub async fn handle_app_reopen(app: &AppHandle) {
     let is_downloaded = {
         let state = app.state::<UpdateState>();
-        let mgr = state.0.lock().await;
+        let mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
         matches!(mgr.status, UpdateStatus::Downloaded { .. })
     };
 
@@ -453,10 +306,11 @@ pub async fn handle_app_reopen(app: &AppHandle) {
     }
 }
 
+
 pub async fn install_and_relaunch_inner(app: &AppHandle) -> Result<(), String> {
     let (pending_update, downloaded_bytes) = {
         let state = app.state::<UpdateState>();
-        let mut mgr = state.0.lock().await;
+        let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
         (mgr.pending_update.take(), mgr.downloaded_bytes.take())
     };
 
@@ -476,7 +330,7 @@ pub async fn install_and_relaunch_inner(app: &AppHandle) -> Result<(), String> {
                 let err_msg = format!("Failed to install update: {e}");
                 eprintln!("[trident] {err_msg}");
                 let state = app.state::<UpdateState>();
-                let mut mgr = state.0.lock().await;
+                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
                 mgr.status = UpdateStatus::Error {
                     message: err_msg.clone(),
                 };
@@ -493,13 +347,13 @@ pub fn start_background_updater(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         // Initial check 10 seconds after startup
         tokio::time::sleep(Duration::from_secs(10)).await;
-        check_and_download_silent(&app).await;
+        check_and_download(&app, false, true).await;
 
         // Recurring check every 1 hour
         let mut interval = tokio::time::interval(Duration::from_secs(3600));
         loop {
             interval.tick().await;
-            check_and_download_silent(&app).await;
+            check_and_download(&app, false, true).await;
         }
     });
 }
@@ -507,14 +361,14 @@ pub fn start_background_updater(app: AppHandle) {
 // Tauri IPC Commands
 #[tauri::command]
 pub async fn check_for_updates_manual(app: AppHandle) -> Result<(), String> {
-    check_and_download_manual(&app).await;
+    check_and_download(&app, true, false).await;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn get_update_status(app: AppHandle) -> Result<UpdateStatus, String> {
     let state = app.state::<UpdateState>();
-    let mgr = state.0.lock().await;
+    let mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
     Ok(mgr.status.clone())
 }
 
