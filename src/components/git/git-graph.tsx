@@ -476,7 +476,7 @@ export const GitGraph = forwardRef<GitGraphHandle, {
                                         <div className="w-20 truncate opacity-50 font-mono text-right commit-hash">
                                             {isLocalChanges ? null : <HighlightedText text={node.hash.substring(0, 7)} searchQuery={searchQuery} />}
                                         </div>
-                                        <div className="w-32 truncate opacity-70 text-right">
+                                        <div className="w-32 truncate opacity-70 text-right commit-date">
                                             {isLocalChanges ? null : new Date(node.date).toLocaleString(undefined, {
                                                 month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
                                             })}

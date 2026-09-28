@@ -134,7 +134,8 @@
   }
 
   .commit-author,
-  .commit-hash {
+  .commit-hash,
+  .commit-date {
     display: none !important;
   }
 }
