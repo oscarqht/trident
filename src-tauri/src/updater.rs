@@ -211,14 +211,15 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
                         body: body.clone(),
                     };
 
-                    {
+                    let tray_item = {
                         let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
                         mgr.pending_update = Some(update);
                         mgr.downloaded_bytes = Some(bytes);
                         mgr.status = new_status.clone();
-                        if let Some(tray_item) = &mgr.tray_item {
-                            let _ = tray_item.set_text(format!("Restart to Update to v{version}"));
-                        }
+                        mgr.tray_item.clone()
+                    };
+                    if let Some(tray_item) = tray_item {
+                        let _ = tray_item.set_text(format!("Restart to Update to v{version}"));
                     }
 
                     let _ = app.emit("trident://update-status", &new_status);
@@ -252,14 +253,15 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
             let status = UpdateStatus::UpToDate {
                 current_version: app.package_info().version.to_string(),
             };
-            {
+            let tray_item = {
                 let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
                 mgr.pending_update = None;
                 mgr.downloaded_bytes = None;
                 mgr.status = status.clone();
-                if let Some(tray_item) = &mgr.tray_item {
-                    let _ = tray_item.set_text("Check for Updates...");
-                }
+                mgr.tray_item.clone()
+            };
+            if let Some(tray_item) = tray_item {
+                let _ = tray_item.set_text("Check for Updates...");
             }
             let _ = app.emit("trident://update-status", &status);
         }
