@@ -183,6 +183,9 @@ pub fn run() {
                 if code.is_none() {
                     // Keep app running in menu bar / status bar when windows close
                     api.prevent_exit();
+                } else if code == Some(tauri::RESTART_EXIT_CODE) {
+                    // App is restarting (e.g. after update) - let Tauri proceed to restart
+                    server::stop_server();
                 } else {
                     server::stop_server();
                     std::process::exit(code.unwrap_or(0));
@@ -190,7 +193,6 @@ pub fn run() {
             }
             RunEvent::Exit => {
                 server::stop_server();
-                std::process::exit(0);
             }
             _ => {}
         }
