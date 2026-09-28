@@ -20,6 +20,7 @@ export interface BranchMenuOptions {
   branchRef: string;
   branchLeafName: string;
   currentBranch?: string;
+  mainWorktreeBranch?: string | null;
   isRemote: boolean;
   selectedBranchRefs?: string[];
 }
@@ -28,9 +29,14 @@ export function buildBranchContextMenuItems(
   options: BranchMenuOptions,
   callbacks: BranchMenuCallbacks
 ): ContextMenuItem[] {
-  const { branchRef, branchLeafName, currentBranch, isRemote, selectedBranchRefs } = options;
+  const { branchRef, branchLeafName, currentBranch, mainWorktreeBranch, isRemote, selectedBranchRefs } = options;
   const isCurrent = !isRemote && branchRef === currentBranch;
+  const isMainBranch = !isRemote && mainWorktreeBranch && branchRef === mainWorktreeBranch;
+  const isProtectedBranch = (ref: string) => {
+    return (!isRemote && ref === currentBranch) || (!isRemote && mainWorktreeBranch ? ref === mainWorktreeBranch : false);
+  };
   const selectedRefs = selectedBranchRefs && selectedBranchRefs.length > 0 ? selectedBranchRefs : [branchRef];
+  const deletableRefs = selectedRefs.filter((ref) => !isProtectedBranch(ref));
   const hasMultiSelection = selectedRefs.length > 1;
   const menuItems: ContextMenuItem[] = [];
 
@@ -107,22 +113,22 @@ export function buildBranchContextMenuItems(
       onClick: () => callbacks.onMerge({ sourceBranch: branchRef, targetBranch: currentBranch }),
     });
   }
-  if (!isCurrent) {
-    if (hasMultiSelection) {
+  if (hasMultiSelection) {
+    if (deletableRefs.length > 0) {
       menuItems.push({
-        label: `Delete Selected Branches (${selectedRefs.length})`,
+        label: `Delete Selected Branches (${deletableRefs.length})`,
         icon: <i className="iconoir-trash text-[14px]" aria-hidden="true" />,
-        onClick: () => callbacks.onDeleteBranches(selectedRefs),
-        danger: true,
-      });
-    } else {
-      menuItems.push({
-        label: 'Delete Branch',
-        icon: <i className="iconoir-trash text-[14px]" aria-hidden="true" />,
-        onClick: () => callbacks.onDeleteBranch(branchRef),
+        onClick: () => callbacks.onDeleteBranches(deletableRefs),
         danger: true,
       });
     }
+  } else if (!isCurrent && !isMainBranch) {
+    menuItems.push({
+      label: 'Delete Branch',
+      icon: <i className="iconoir-trash text-[14px]" aria-hidden="true" />,
+      onClick: () => callbacks.onDeleteBranch(branchRef),
+      danger: true,
+    });
   }
 
   return menuItems;

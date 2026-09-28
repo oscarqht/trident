@@ -29,6 +29,7 @@ export interface GitWorktree {
   branch: string | null;
   head: string | null;
   isCurrent: boolean;
+  isMain?: boolean;
 }
 
 export interface AppSettings {

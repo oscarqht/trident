@@ -201,6 +201,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [branchesToDelete, setBranchesToDelete] = useState<string[]>([]);
   const [deleteRemoteBranch, setDeleteRemoteBranch] = useState(false);
+  const [forceDeleteWorktree, setForceDeleteWorktree] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDeleteWorktreeOpen, setIsDeleteWorktreeOpen] = useState(false);
   const [worktreeToDelete, setWorktreeToDelete] = useState<string | null>(null);
@@ -1122,6 +1123,22 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   }, [log?.all, branchData?.branches, branchData?.branchCommits, branchData?.remotes, visibilityMap, getBranchEffectiveVisibility]);
 
   const currentBranch = branchData?.current?.trim() || statusData?.current?.trim() || '';
+  const worktrees = useMemo(() => branchData?.worktrees ?? [], [branchData?.worktrees]);
+  const mainWorktree = useMemo(() => worktrees.find((wt) => wt.isMain), [worktrees]);
+  const mainWorktreeBranch = mainWorktree?.branch ?? null;
+  const branchToLinkedWorktreeMap = useMemo(() => {
+    const map = new Map<string, (typeof worktrees)[number]>();
+    for (const wt of worktrees) {
+      if (!wt.isMain && wt.branch) {
+        map.set(wt.branch, wt);
+      }
+    }
+    return map;
+  }, [worktrees]);
+  const linkedWorktreesToDelete = useMemo(() => {
+    const branchSet = new Set(branchesToDelete);
+    return worktrees.filter((wt) => !wt.isMain && wt.branch && branchSet.has(wt.branch));
+  }, [branchesToDelete, worktrees]);
 
   const currentHeadHash = useMemo(() => {
     if (currentBranch && branchData?.branchCommits?.[currentBranch]) {
@@ -1432,10 +1449,29 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   }, [repoPath, startScript]);
 
   const confirmDeleteBranches = (branches: string[]) => {
-    const deletableBranches = branches.filter((branch) => branch !== currentBranch);
-    if (deletableBranches.length === 0) return;
+    const isProtected = (b: string) => b === currentBranch || (mainWorktreeBranch ? b === mainWorktreeBranch : false);
+    const deletableBranches = branches.filter((branch) => !isProtected(branch));
+    const excludedCount = branches.length - deletableBranches.length;
+    if (deletableBranches.length === 0) {
+      if (excludedCount > 0) {
+        toast({
+          type: 'info',
+          title: 'Cannot delete branch',
+          description: 'The selected branch is currently checked out in the main worktree or the active worktree.',
+        });
+      }
+      return;
+    }
+    if (excludedCount > 0) {
+      toast({
+        type: 'info',
+        title: 'Protected branch(es) excluded',
+        description: `${excludedCount} branch(es) currently checked out in the main worktree or active worktree were excluded from deletion.`,
+      });
+    }
     setBranchesToDelete(deletableBranches);
     setDeleteRemoteBranch(false);
+    setForceDeleteWorktree(false);
     setIsDeleteOpen(true);
   };
 
@@ -1519,14 +1555,23 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
           continue;
         }
 
-        addDeleteRequest(`local:${branchRef}`, branchRef, () =>
-          runGitAction({
+        const linkedWt = branchToLinkedWorktreeMap.get(branchRef);
+        addDeleteRequest(`local:${branchRef}`, branchRef, async () => {
+          if (linkedWt) {
+            await runGitAction({
+              repoPath,
+              action: 'delete-worktree',
+              data: { path: linkedWt.path, force: forceDeleteWorktree },
+              suppressErrorToast: true,
+            });
+          }
+          await runGitAction({
             repoPath,
             action: 'delete-branch',
             data: { branch: branchRef },
             suppressErrorToast: true,
-          })
-        );
+          });
+        });
       }
 
       const requests = Array.from(deleteRequests.values());
@@ -1534,8 +1579,9 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
       const failedBranches = results.flatMap((result, index) => {
         if (result.status === 'fulfilled') return [];
         const failedBranch = requests[index].branchRef;
+        const err = result.reason instanceof Error ? result.reason.message : String(result.reason || '');
         console.error(`Failed to delete branch "${failedBranch}":`, result.reason);
-        return [failedBranch];
+        return [{ branch: failedBranch, error: err }];
       });
 
       if (failedBranches.length > 0) {
@@ -1548,8 +1594,11 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
             <div>
               <div>The following branches could not be deleted:</div>
               <ul className="mt-1 max-h-40 overflow-y-auto list-disc pl-5">
-                {failedBranches.map((branch) => (
-                  <li key={branch} className="break-all">{branch}</li>
+                {failedBranches.map(({ branch, error }) => (
+                  <li key={branch} className="break-all">
+                    <span>{branch}</span>
+                    {error && <span className="opacity-75 block text-xs">{error}</span>}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -1561,6 +1610,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
       setIsDeleteOpen(false);
       setBranchesToDelete([]);
       setDeleteRemoteBranch(false);
+      setForceDeleteWorktree(false);
       setSelectedBranchRefs([]);
       setBranchSelectionAnchor(null);
     } catch (e) {
@@ -2854,7 +2904,10 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   };
 
   const getBranchContextMenuItems = (options: BranchMenuOptions): ContextMenuItem[] => {
-    const menuItems = buildBranchContextMenuItems(options, {
+    const menuItems = buildBranchContextMenuItems({
+      ...options,
+      mainWorktreeBranch: options.mainWorktreeBranch ?? mainWorktreeBranch,
+    }, {
       onCheckout: handleCheckout,
       onCheckoutToLocal: confirmCheckoutToLocal,
       onCreateBranch: confirmCreateBranch,
@@ -2921,6 +2974,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
         branchRef: displayRef,
         branchLeafName: displayRef.split('/').pop() || displayRef,
         currentBranch,
+        mainWorktreeBranch,
         isRemote: false,
       });
     }
@@ -2932,14 +2986,16 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
       branchRef: remoteBranchRef,
       branchLeafName: remoteBranchRef.split('/').pop() || displayRef,
       currentBranch,
+      mainWorktreeBranch,
       isRemote: true,
     });
   };
   const localGroupBranchRefs = useMemo(() => {
     if (!localBranchTree) return [];
-    return collectAllBranchRefs(localBranchTree).filter((branchRef) => branchRef !== currentBranch);
-  }, [localBranchTree, currentBranch]);
-  const worktrees = branchData?.worktrees ?? [];
+    return collectAllBranchRefs(localBranchTree).filter(
+      (branchRef) => branchRef !== currentBranch && (!mainWorktreeBranch || branchRef !== mainWorktreeBranch)
+    );
+  }, [localBranchTree, currentBranch, mainWorktreeBranch]);
 
   const branchTreePopoverContent = (
     <div className="w-[22rem] max-w-[calc(100vw-2rem)] flex flex-col border border-base-300 bg-base-100 rounded-box shadow-xl overflow-hidden">
@@ -2992,6 +3048,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 <BranchTreeItem
                   node={localBranchTree}
                   currentBranch={branchData?.current}
+                  mainWorktreeBranch={mainWorktreeBranch}
                   expandedFolders={expandedFolders}
                   onToggleFolder={toggleFolder}
                   onCheckout={handleCheckout}
@@ -3091,6 +3148,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                     <BranchTreeItem
                       node={tree}
                       currentBranch={branchData?.current}
+                      mainWorktreeBranch={mainWorktreeBranch}
                       expandedFolders={expandedFolders}
                       onToggleFolder={toggleFolder}
                       onCheckout={handleCheckout}
@@ -3339,7 +3397,11 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
       {isDeleteOpen && (
         <dialog className="modal modal-open">
           <div className="modal-box">
-            <h3 className="font-bold text-lg">{branchesToDelete.length > 1 ? 'Delete Branches' : 'Delete Branch'}</h3>
+            <h3 className="font-bold text-lg">
+              {linkedWorktreesToDelete.length > 0
+                ? (branchesToDelete.length > 1 ? 'Delete Branches & Worktrees' : 'Delete Branch & Worktree')
+                : (branchesToDelete.length > 1 ? 'Delete Branches' : 'Delete Branch')}
+            </h3>
             {branchesToDelete.length > 1 ? (
               <div className="py-4 space-y-3">
                 <p className="break-words">
@@ -3360,6 +3422,59 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 This action cannot be undone.
               </p>
             )}
+
+            {linkedWorktreesToDelete.length > 0 && (
+              <div className="alert alert-warning text-sm mb-4 space-y-2">
+                <div className="flex items-start gap-2">
+                  <i className="iconoir-warning-triangle text-lg shrink-0 mt-0.5" aria-hidden="true" />
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <p className="font-semibold">
+                      {linkedWorktreesToDelete.length === 1
+                        ? 'Linked worktree will also be deleted'
+                        : `${linkedWorktreesToDelete.length} linked worktrees will also be deleted`}
+                    </p>
+                    <p className="text-xs opacity-90 break-words">
+                      {linkedWorktreesToDelete.length === 1 ? (
+                        <>
+                          This branch is checked out in linked worktree <span className="font-mono font-bold break-all">{linkedWorktreesToDelete[0].path}</span>. Deleting this branch will delete the worktree and remove its working directory.
+                        </>
+                      ) : (
+                        <>
+                          The following linked worktrees are checked out on the selected branches and will be deleted along with their working directories:
+                        </>
+                      )}
+                    </p>
+                    {linkedWorktreesToDelete.length > 1 && (
+                      <ul className="text-xs font-mono space-y-1 mt-1 pl-4 list-disc max-h-32 overflow-y-auto">
+                        {linkedWorktreesToDelete.map((wt) => (
+                          <li key={wt.path} className="break-all">
+                            <span className="font-bold">{wt.branch}</span>: {wt.path}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {linkedWorktreesToDelete.length > 0 && (
+              <div className="form-control mb-2">
+                <label className="label cursor-pointer justify-start items-start gap-2 min-w-0">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm checkbox-warning"
+                    checked={forceDeleteWorktree}
+                    onChange={(e) => setForceDeleteWorktree(e.target.checked)}
+                    disabled={isDeleting}
+                  />
+                  <span className="label-text break-words whitespace-normal text-xs">
+                    Force delete worktree even if it contains uncommitted changes
+                  </span>
+                </label>
+              </div>
+            )}
+
             {selectedTrackingUpstreams.length > 0 && (
                 <div className="form-control">
                 <label className="label cursor-pointer justify-start items-start gap-2 min-w-0">
@@ -3377,15 +3492,17 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 </div>
             )}
             <div className="modal-action">
-              <button className="btn" onClick={() => { setIsDeleteOpen(false); setBranchesToDelete([]); setDeleteRemoteBranch(false); }} disabled={isDeleting}>Cancel</button>
+              <button className="btn" onClick={() => { setIsDeleteOpen(false); setBranchesToDelete([]); setDeleteRemoteBranch(false); setForceDeleteWorktree(false); }} disabled={isDeleting}>Cancel</button>
               <button className="btn btn-error" onClick={handleDeleteBranch} disabled={isDeleting}>
                 {isDeleting && <span className="loading loading-spinner loading-xs"></span>}
-                Delete
+                {linkedWorktreesToDelete.length > 0
+                  ? (branchesToDelete.length > 1 ? 'Delete Branches & Worktrees' : 'Delete Branch & Worktree')
+                  : 'Delete'}
               </button>
             </div>
           </div>
           <form method="dialog" className="modal-backdrop">
-            <button onClick={() => { setIsDeleteOpen(false); setBranchesToDelete([]); setDeleteRemoteBranch(false); }}>close</button>
+            <button onClick={() => { setIsDeleteOpen(false); setBranchesToDelete([]); setDeleteRemoteBranch(false); setForceDeleteWorktree(false); }}>close</button>
           </form>
         </dialog>
       )}

@@ -549,7 +549,8 @@ export class GitService {
 
     const normalizedRepoPath = resolve(this.repoPath);
     const uniqueByPath = new Map<string, GitWorktree>();
-    for (const entry of worktrees) {
+    for (let i = 0; i < worktrees.length; i++) {
+      const entry = worktrees[i];
       const normalizedPath = resolve(entry.path);
       if (uniqueByPath.has(normalizedPath)) continue;
       uniqueByPath.set(normalizedPath, {
@@ -557,6 +558,7 @@ export class GitService {
         branch: entry.detached ? null : entry.branch,
         head: entry.head,
         isCurrent: normalizedPath === normalizedRepoPath,
+        isMain: i === 0,
       });
     }
 
@@ -581,6 +583,7 @@ export class GitService {
       branch: currentBranch || null,
       head: null,
       isCurrent: true,
+      isMain: true,
     }];
   }
 
@@ -916,7 +919,7 @@ export class GitService {
     await this.git.deleteLocalBranch(branch, true);
   }
 
-  async deleteWorktree(worktreePath: string): Promise<void> {
+  async deleteWorktree(worktreePath: string, force: boolean = false): Promise<void> {
     const targetPath = worktreePath.trim();
     if (!targetPath) {
       throw new Error('Worktree path is required');
@@ -929,12 +932,20 @@ export class GitService {
     }
 
     const worktrees = await this.getWorktrees('');
-    const isKnownWorktree = worktrees.some((worktree) => resolve(worktree.path) === resolvedTargetPath);
-    if (!isKnownWorktree) {
+    const targetWorktree = worktrees.find((worktree) => resolve(worktree.path) === resolvedTargetPath);
+    if (!targetWorktree) {
       throw new Error(`Worktree not found: ${targetPath}`);
     }
+    if (targetWorktree.isMain) {
+      throw new Error('Cannot delete the main worktree');
+    }
 
-    await this.git.raw(['worktree', 'remove', targetPath]);
+    const args = ['worktree', 'remove'];
+    if (force) {
+      args.push('--force');
+    }
+    args.push(targetPath);
+    await this.git.raw(args);
     await this.git.raw(['worktree', 'prune']);
   }
 

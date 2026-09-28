@@ -11,6 +11,7 @@ export type BranchRowSelectModifiers = { isMultiSelect: boolean; isRangeSelect: 
 export function BranchTreeItem({
   node,
   currentBranch,
+  mainWorktreeBranch,
   expandedFolders,
   onToggleFolder,
   onCheckout,
@@ -38,6 +39,7 @@ export function BranchTreeItem({
 }: {
   node: BranchTreeNode;
   currentBranch?: string;
+  mainWorktreeBranch?: string | null;
   expandedFolders: Set<string>;
   onToggleFolder: (path: string) => void;
   onCheckout: (branch: string) => void;
@@ -89,7 +91,9 @@ export function BranchTreeItem({
 
         if (isFolder) {
           const childBranchRefs = collectAllBranchRefs(child);
-          const deletableChildBranchRefs = childBranchRefs.filter((branchRef) => branchRef !== currentBranch);
+          const deletableChildBranchRefs = childBranchRefs.filter(
+            (branchRef) => branchRef !== currentBranch && (!mainWorktreeBranch || branchRef !== mainWorktreeBranch)
+          );
 
           // Render folder
           return (
@@ -138,6 +142,7 @@ export function BranchTreeItem({
                 <BranchTreeItem
                   node={child}
                   currentBranch={currentBranch}
+                  mainWorktreeBranch={mainWorktreeBranch}
                   expandedFolders={expandedFolders}
                   onToggleFolder={onToggleFolder}
                   onCheckout={onCheckout}
@@ -176,6 +181,7 @@ export function BranchTreeItem({
           branchRef: child.fullPath!,
           branchLeafName: child.name,
           currentBranch,
+          mainWorktreeBranch,
           isRemote,
           selectedBranchRefs: selectedBranches.has(child.fullPath!) ? Array.from(selectedBranches) : [child.fullPath!],
         });
