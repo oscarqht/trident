@@ -18,11 +18,12 @@ export const metadata: Metadata = {
   description: "Git repository management tool",
   icons: {
     icon: [
-      { url: "/favicon.ico" },
+      { url: "/icon.svg", type: "image/svg+xml" },
       { url: "/favicon.png", type: "image/png", sizes: "64x64" },
       { url: "/icon.png", type: "image/png", sizes: "256x256" },
+      { url: "/favicon.ico", sizes: "any" },
     ],
-    shortcut: "/favicon.png",
+    shortcut: "/icon.svg",
     apple: "/icon.png",
   },
 };
