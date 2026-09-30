@@ -99,14 +99,31 @@ def render_tray_icons():
 
 render_tray_icons()
 
-# 3. Browser favicon, Next.js app icon, and Windows ICO
-fav = app_icon.resize((64, 64), Image.Resampling.LANCZOS)
+# 3. Browser favicon, Next.js app icon, and Favicon ICO (transparent background)
+def make_transparent_icon(target_size, padding_pct=0.06):
+    inner = int(round(target_size * (1 - 2 * padding_pct)))
+    scale = float(inner) / max(w, h)
+    tw, th = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
+    resized = trident_cropped.resize((tw, th), Image.Resampling.LANCZOS)
+    canvas = Image.new('RGBA', (target_size, target_size), (0, 0, 0, 0))
+    pos_x = (target_size - tw) // 2
+    pos_y = (target_size - th) // 2
+    canvas.paste(resized, (pos_x, pos_y), resized)
+    return canvas
+
+fav = make_transparent_icon(64)
 fav.save('public/favicon.png')
 
+app_fav = make_transparent_icon(256)
+app_fav.save('public/icon.png')
 if os.path.exists('src/app'):
-    app_fav = app_icon.resize((256, 256), Image.Resampling.LANCZOS)
     app_fav.save('src/app/icon.png')
-    app_fav.save('public/icon.png')
+
+fav_ico_sizes = [16, 32, 48]
+fav_ico_images = [make_transparent_icon(s) for s in fav_ico_sizes]
+fav_ico_images[0].save('public/favicon.ico', format='ICO', append_images=fav_ico_images[1:])
+if os.path.exists('src/app'):
+    fav_ico_images[0].save('src/app/favicon.ico', format='ICO', append_images=fav_ico_images[1:])
 
 app_icon.save('assets/icon.ico', format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
 
