@@ -89,10 +89,11 @@ export function CommandPalette() {
       aria-label="Command palette"
     >
       <div
-        className="mx-auto w-full max-w-2xl overflow-hidden rounded-xl border border-base-300 bg-base-100 shadow-2xl"
+        className="mx-auto w-full max-w-xl overflow-hidden rounded-xl border border-base-300 bg-base-100 shadow-2xl"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="border-b border-base-300 p-3">
+        <div className="border-b border-base-300 px-3 py-2.5 flex items-center gap-2.5">
+          <i className="iconoir-search text-[16px] text-base-content/40 shrink-0 ml-1" aria-hidden="true" />
           <input
             ref={inputRef}
             type="text"
@@ -128,49 +129,63 @@ export function CommandPalette() {
                 }
               }
             }}
-            placeholder="Type a command..."
-            className="input input-ghost w-full text-base focus:outline-none"
+            placeholder="Search repositories..."
+            className="w-full bg-transparent text-sm focus:outline-none placeholder:text-base-content/40"
           />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              className="text-xs text-base-content/40 hover:text-base-content px-1.5 py-0.5 rounded"
+            >
+              Clear
+            </button>
+          )}
         </div>
 
-        <div className="max-h-80 overflow-y-auto py-2">
-          <div className="px-4 pb-2 text-xs font-semibold uppercase tracking-wider opacity-60">
-            Recent repositories
+        <div className="max-h-80 overflow-y-auto p-1.5">
+          <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-base-content/50">
+            {query ? 'Matching repositories' : 'Recent repositories'}
           </div>
 
           {recentRepositories.length === 0 && (
-            <div className="px-4 py-6 text-sm opacity-60">No recently opened repositories yet.</div>
+            <div className="px-4 py-8 text-center text-xs text-base-content/50">No recently opened repositories yet.</div>
           )}
 
           {recentRepositories.length > 0 && filteredRepositories.length === 0 && (
-            <div className="px-4 py-6 text-sm opacity-60">No matching repositories.</div>
+            <div className="px-4 py-8 text-center text-xs text-base-content/50">No matching repositories found.</div>
           )}
 
           {filteredRepositories.map((repo, index) => {
             const repoDisplayName = getRepositoryDisplayName(repo);
+            const isSelected = activeIndex === index;
             return (
             <button
               key={repo.path}
               type="button"
               className={cn(
-                'flex w-full items-center justify-between gap-4 px-4 py-3 text-left',
-                activeIndex === index ? 'bg-base-200' : 'hover:bg-base-200/70'
+                'flex w-full items-center justify-between gap-3 px-3 py-2 text-left rounded-md transition-colors cursor-pointer',
+                isSelected ? 'bg-base-200 text-base-content' : 'hover:bg-base-200/60 text-base-content/80'
               )}
               onMouseEnter={() => setSelectedIndex(index)}
               onClick={() => openRepository(repo.path)}
             >
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">{repoDisplayName}</div>
-                <div className="truncate text-xs opacity-65">{repo.path}</div>
+              <div className="min-w-0 flex items-center gap-2.5">
+                <i className="iconoir-folder text-[15px] opacity-60 shrink-0" aria-hidden="true" />
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-semibold">{repoDisplayName}</div>
+                  <div className="truncate text-[11px] opacity-50 font-mono mt-0.5">{repo.path}</div>
+                </div>
               </div>
-              <span className="text-xs opacity-60">Open</span>
+              <span className="text-[11px] opacity-50 shrink-0 font-medium">Open ↵</span>
             </button>
             );
           })}
         </div>
 
-        <div className="border-t border-base-300 px-4 py-2 text-xs opacity-60">
-          Use ↑ ↓ to navigate, Enter to open, Esc to close.
+        <div className="border-t border-base-300 px-3.5 py-2 text-[11px] text-base-content/50 flex items-center justify-between bg-base-200/30">
+          <span>Navigate with <kbd className="kbd kbd-xs">↑</kbd> <kbd className="kbd kbd-xs">↓</kbd></span>
+          <span>Open <kbd className="kbd kbd-xs">Enter</kbd></span>
         </div>
       </div>
     </div>

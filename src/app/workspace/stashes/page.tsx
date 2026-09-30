@@ -46,7 +46,7 @@ function StashDiffView({ repoPath, stashIndex, filePath }: { repoPath: string; s
     if (isImageFile(filePath)) {
         return (
             <div className="flex flex-col h-full bg-base-100">
-                <div className="flex items-center justify-between px-4 h-[57px] border-b border-base-300 shrink-0 bg-base-100">
+                <div className="flex items-center justify-between px-4 h-11 border-b border-base-300 shrink-0 bg-base-100">
                     <span className="text-sm font-mono truncate max-w-[70%]" title={filePath}>{filePath}</span>
                 </div>
                 <div className="flex-1 overflow-auto">
@@ -61,7 +61,7 @@ function StashDiffView({ repoPath, stashIndex, filePath }: { repoPath: string; s
     if (isBinary) {
         return (
             <div className="flex flex-col h-full bg-base-100">
-                <div className="flex items-center justify-between px-4 h-[57px] border-b border-base-300 shrink-0 bg-base-100">
+                <div className="flex items-center justify-between px-4 h-11 border-b border-base-300 shrink-0 bg-base-100">
                     <span className="text-sm font-mono truncate max-w-[70%]" title={filePath}>{filePath}</span>
                 </div>
                 <div className="flex-1 flex items-center justify-center opacity-50">
@@ -83,7 +83,7 @@ function StashDiffView({ repoPath, stashIndex, filePath }: { repoPath: string; s
 
     return (
         <div className="flex flex-col h-full bg-base-100">
-            <div className="flex items-center justify-between px-4 h-[57px] border-b border-base-300 shrink-0 bg-base-100">
+            <div className="flex items-center justify-between px-4 h-11 border-b border-base-300 shrink-0 bg-base-100">
                 <span className="text-sm font-mono truncate max-w-[70%]" title={filePath}>{filePath}</span>
                 <div className="flex items-center gap-2">
                     <label htmlFor="split-view-stash" className="text-[10px] uppercase tracking-wider font-bold cursor-pointer opacity-70">Split View</label>
@@ -239,9 +239,9 @@ function StashesContent() {
     return (
         <div className="flex h-full overflow-hidden">
             {/* Left Panel: Stash List */}
-            <div className="w-64 border-r border-base-300 flex flex-col bg-base-200/30">
-                <div className="h-[57px] px-4 border-b border-base-300 flex items-center justify-between bg-base-100">
-                    <h1 className="font-bold text-lg">Stashes</h1>
+            <div className="w-72 border-r border-base-300 flex flex-col bg-base-200/30">
+                <div className="h-12 px-4 border-b border-base-300 flex items-center justify-between bg-base-100">
+                    <h1 className="font-semibold text-sm">Stashes</h1>
                     <button className="btn btn-ghost btn-sm btn-square" onClick={() => refetch()} disabled={action.isPending} title="Refresh">
                         {action.isPending ? <span className="loading loading-spinner loading-xs"></span> : <i className="iconoir-refresh-circle text-[16px]" aria-hidden="true" />}
                     </button>

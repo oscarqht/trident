@@ -66,7 +66,7 @@ export function DiffView({ repoPath, filePath }: { repoPath: string, filePath: s
   if (isImage) {
     return (
       <div className="flex flex-col h-full bg-base-100">
-        <div className="flex items-center justify-between px-4 h-[57px] border-b border-base-300 shrink-0 bg-base-100">
+        <div className="flex items-center justify-between px-4 h-11 border-b border-base-300 shrink-0 bg-base-100">
           <span className="text-sm font-mono truncate max-w-[70%]" title={filePath}>{filePath}</span>
         </div>
         <div className="flex-1 overflow-auto">
@@ -82,7 +82,7 @@ export function DiffView({ repoPath, filePath }: { repoPath: string, filePath: s
   if (isBinary) {
     return (
       <div className="flex flex-col h-full bg-base-100">
-        <div className="flex items-center justify-between px-4 h-[57px] border-b border-base-300 shrink-0 bg-base-100">
+        <div className="flex items-center justify-between px-4 h-11 border-b border-base-300 shrink-0 bg-base-100">
           <span className="text-sm font-mono truncate max-w-[70%]" title={filePath}>{filePath}</span>
         </div>
         <div className="flex-1 flex items-center justify-center opacity-50">
@@ -104,7 +104,7 @@ export function DiffView({ repoPath, filePath }: { repoPath: string, filePath: s
 
   return (
     <div className="flex flex-col h-full bg-base-100">
-      <div className="flex items-center justify-between px-4 h-[57px] border-b border-base-300 shrink-0 bg-base-100">
+      <div className="flex items-center justify-between px-4 h-11 border-b border-base-300 shrink-0 bg-base-100">
         <span className="text-sm font-mono truncate max-w-[70%]" title={filePath}>{filePath}</span>
         <div className="flex items-center gap-2">
           <label htmlFor="split-view" className="text-[10px] uppercase tracking-wider font-bold cursor-pointer opacity-70">Split View</label>

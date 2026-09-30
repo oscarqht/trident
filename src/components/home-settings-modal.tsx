@@ -94,47 +94,47 @@ export function HomeSettingsModal({ open, onOpenChange, onSettingsChange }: Home
   return (
     <>
       <dialog className="modal modal-open">
-        <div className="modal-box">
-          <h3 className="font-bold text-lg">Settings</h3>
-          <p className="py-4 opacity-70">Configure your application preferences.</p>
+        <div className="modal-box max-w-lg p-6 border border-base-300 rounded-xl shadow-xl bg-base-100">
+          <h3 className="font-bold text-lg text-base-content">Settings</h3>
+          <p className="text-xs text-base-content/60 mt-1 mb-5">Configure your application preferences.</p>
 
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
               <span className="loading loading-spinner loading-md"></span>
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-5">
               {/* Theme Selection */}
               <div className="form-control w-full">
-                <label className="label">
-                  <span className="label-text">Color Theme</span>
+                <label className="label pt-0 pb-1">
+                  <span className="label-text text-xs font-medium">Color Theme</span>
                 </label>
-                <div className="text-xs opacity-70 mb-2">
+                <div className="text-xs text-base-content/60 mb-2.5">
                   Choose your preferred color theme for the application.
                 </div>
                 <div className="flex gap-2">
                   <button
-                    className={`btn flex-1 ${theme === 'system' ? 'btn-primary' : ''}`}
+                    className={`btn btn-sm flex-1 text-xs gap-1.5 ${theme === 'system' ? 'btn-primary' : 'btn-ghost border border-base-300'}`}
                     onClick={() => setTheme('system')}
                     disabled={!mounted}
                   >
-                    <i className="iconoir-computer text-[20px] mr-2" aria-hidden="true" />
+                    <i className="iconoir-computer text-[15px]" aria-hidden="true" />
                     System
                   </button>
                   <button
-                    className={`btn flex-1 ${theme === 'light' ? 'btn-primary' : ''}`}
+                    className={`btn btn-sm flex-1 text-xs gap-1.5 ${theme === 'light' ? 'btn-primary' : 'btn-ghost border border-base-300'}`}
                     onClick={() => setTheme('light')}
                     disabled={!mounted}
                   >
-                    <i className="iconoir-sun-light text-[20px] mr-2" aria-hidden="true" />
+                    <i className="iconoir-sun-light text-[15px]" aria-hidden="true" />
                     Light
                   </button>
                   <button
-                    className={`btn flex-1 ${theme === 'dark' ? 'btn-primary' : ''}`}
+                    className={`btn btn-sm flex-1 text-xs gap-1.5 ${theme === 'dark' ? 'btn-primary' : 'btn-ghost border border-base-300'}`}
                     onClick={() => setTheme('dark')}
                     disabled={!mounted}
                   >
-                    <i className="iconoir-moon-sat text-[20px] mr-2" aria-hidden="true" />
+                    <i className="iconoir-moon-sat text-[15px]" aria-hidden="true" />
                     Dark
                   </button>
                 </div>
@@ -142,23 +142,23 @@ export function HomeSettingsModal({ open, onOpenChange, onSettingsChange }: Home
 
               {/* Default Root Folder */}
               <div className="form-control w-full">
-                <label className="label">
-                  <span className="label-text">Default Root Folder</span>
+                <label className="label pt-0 pb-1">
+                  <span className="label-text text-xs font-medium">Default Root Folder</span>
                 </label>
-                <div className="text-xs opacity-70 mb-2">
+                <div className="text-xs text-base-content/60 mb-2.5">
                   The starting folder when browsing for new repositories. Leave empty to use your home folder.
                 </div>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     placeholder={settings?.resolvedDefaultFolder || 'User home folder'}
-                    className="input input-bordered w-full font-mono text-sm"
+                    className="input input-sm input-bordered w-full font-mono text-xs"
                     value={localDefaultFolder}
                     onChange={(e) => setLocalDefaultFolder(e.target.value)}
                     autoFocus
                   />
-                  <button className="btn btn-square" onClick={() => setFolderBrowserOpen(true)} title="Browse folders">
-                    <i className="iconoir-folder text-[20px]" aria-hidden="true" />
+                  <button className="btn btn-sm btn-ghost border border-base-300 btn-square" onClick={() => setFolderBrowserOpen(true)} title="Browse folders">
+                    <i className="iconoir-folder text-[16px]" aria-hidden="true" />
                   </button>
                 </div>
                 {localDefaultFolder && (
@@ -172,9 +172,9 @@ export function HomeSettingsModal({ open, onOpenChange, onSettingsChange }: Home
             </div>
           )}
 
-          <div className="modal-action">
-             <button className="btn" onClick={() => onOpenChange(false)}>Close</button>
-             <button className="btn btn-primary" onClick={handleSave} disabled={isSaving || isLoading}>
+          <div className="modal-action pt-3 border-t border-base-200 mt-6">
+             <button className="btn btn-sm btn-ghost" onClick={() => onOpenChange(false)}>Close</button>
+             <button className="btn btn-sm btn-primary" onClick={handleSave} disabled={isSaving || isLoading}>
                {isSaving && <span className="loading loading-spinner loading-xs"></span>}
                Save Folder Settings
              </button>

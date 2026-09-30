@@ -2,14 +2,16 @@
 
 import { cn, getRepoFolderName, getRepositoryDisplayName } from '@/lib/utils';
 import Link from 'next/link';
+import Image from 'next/image';
 import { HomeSettingsModal } from '@/components/home-settings-modal';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
 import { useGitStatus, useRepository, useUpdateSettings } from '@/hooks/use-git';
 
 const SIDEBAR_COLLAPSED_KEY = 'workspace-sidebar-collapsed';
-const SIDEBAR_WIDTH_EXPANDED = 256; // w-64
-const SIDEBAR_WIDTH_COLLAPSED = 64; // w-16
+const SIDEBAR_WIDTH_EXPANDED = 240;
+const SIDEBAR_WIDTH_COLLAPSED = 60;
 
 type SidebarProps = React.HTMLAttributes<HTMLDivElement>;
 type SidebarPropsWithInitialState = SidebarProps & {
@@ -61,13 +63,11 @@ export function Sidebar({ className, initialCollapsed = false }: SidebarPropsWit
   const toggleCollapsed = useCallback(() => {
     const newValue = !isCollapsed;
     setIsCollapsed(newValue);
-    
     updateSettings.mutate({ sidebarCollapsed: newValue });
   }, [isCollapsed, updateSettings]);
 
   const getHref = (subPath: string = '') => {
     const p = new URLSearchParams(searchParams.toString());
-    // Clean up tab if it exists from previous version, though we are moving away from it.
     p.delete('tab');
     if (repoPath && currentBranch) {
       p.set('branch', currentBranch);
@@ -86,183 +86,211 @@ export function Sidebar({ className, initialCollapsed = false }: SidebarPropsWit
     return false;
   };
 
-  // Calculate width
   const sidebarWidth = isCollapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED;
 
   return (
     <div 
-      style={{ 
-        width: sidebarWidth
-      }}
+      style={{ width: sidebarWidth }}
       className={cn(
-        "pb-12 border-r border-base-300 min-h-screen bg-base-100 relative",
-        enableTransition && "transition-all duration-300",
+        "border-r border-base-300 min-h-screen bg-base-200/30 flex flex-col justify-between relative select-none",
+        enableTransition && "transition-[width] duration-200 ease-in-out",
         className
       )}
     >
-      <div className="space-y-4 py-4">
-        <div className={cn("px-3 py-2", isCollapsed && "px-2")}>
-          <div className={cn("mb-6 flex items-center", isCollapsed ? "flex-col gap-2 px-0" : "justify-between px-4")}>
-            {!isCollapsed && (
-              <a
+      {/* Top Section */}
+      <div className="flex flex-col flex-1 min-h-0">
+        {/* Workspace Brand / Header */}
+        <div className={cn(
+          "h-12 border-b border-base-300 flex items-center shrink-0",
+          isCollapsed ? "justify-center px-1" : "justify-between px-3"
+        )}>
+          {!isCollapsed ? (
+            <>
+              <Link
                 href="/"
-                onClick={(e) => {
-                  if (e.metaKey || e.ctrlKey) {
-                    // Cmd/Ctrl+click: open in new tab (default behavior)
-                    return;
-                  }
-                  e.preventDefault();
-                  router.push('/');
-                }}
-                className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer text-base-content overflow-hidden"
-                title={repoDisplayName ? `${repoDisplayName} - Go to Home` : "Go to Home"}
+                className="flex items-center gap-2.5 min-w-0 hover:opacity-80 transition-opacity"
+                title={repoDisplayName ? `${repoDisplayName} - Go to Repositories` : "Go to Repositories"}
               >
                 {repository?.icon ? (
-                  <span className="h-5 w-5 flex-shrink-0 flex items-center justify-center text-base leading-none" aria-hidden="true">
+                  <span className="text-base leading-none shrink-0" aria-hidden="true">
                     {repository.icon}
                   </span>
                 ) : (
-                  <img src="/icon.png" alt="Trident" className="h-5 w-5 flex-shrink-0" />
+                  <Image src="/icon.png" alt="Trident" width={20} height={20} className="rounded shrink-0" />
                 )}
-                <h2 className="text-lg font-bold tracking-tight truncate">
+                <span className="font-semibold text-xs tracking-tight text-base-content truncate">
                   {repoDisplayName || "Trident"}
-                </h2>
-              </a>
-            )}
-            {isCollapsed && (
-              <a
-                href="/"
-                onClick={(e) => {
-                  if (e.metaKey || e.ctrlKey) {
-                    // Cmd/Ctrl+click: open in new tab (default behavior)
-                    return;
-                  }
-                  e.preventDefault();
-                  router.push('/');
-                }}
-                className="flex items-center justify-center h-8 w-8 hover:opacity-80 transition-opacity cursor-pointer"
-                title={repoDisplayName ? `${repoDisplayName} - Go to Home` : "Go to Home"}
-              >
-                {repository?.icon ? (
-                  <span className="h-5 w-5 flex items-center justify-center text-base leading-none" aria-hidden="true">
-                    {repository.icon}
-                  </span>
-                ) : (
-                  <img src="/icon.png" alt={repoDisplayName || "Trident"} className="h-5 w-5" />
-                )}
-              </a>
-            )}
-            <div className={cn("flex items-center gap-1", isCollapsed && "flex-col")}>
+                </span>
+              </Link>
               <button
-                className="btn btn-ghost btn-sm btn-square"
+                className="btn btn-ghost btn-xs btn-square text-base-content/60 hover:text-base-content"
                 onClick={toggleCollapsed} 
-                title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"} 
+                title="Collapse sidebar"
               >
-                {isCollapsed ? <i className="iconoir-fast-arrow-right text-[16px]" aria-hidden="true" /> : <i className="iconoir-fast-arrow-left text-[16px]" aria-hidden="true" />}
+                <i className="iconoir-fast-arrow-left text-[15px]" aria-hidden="true" />
+              </button>
+            </>
+          ) : (
+            <div className="flex flex-col items-center gap-1">
+              <button
+                className="btn btn-ghost btn-xs btn-square text-base-content/60 hover:text-base-content"
+                onClick={toggleCollapsed} 
+                title="Expand sidebar"
+              >
+                <i className="iconoir-fast-arrow-right text-[15px]" aria-hidden="true" />
               </button>
             </div>
-          </div>
-
-          {!isCollapsed && repoPath && (
-            <div className="px-4 mb-6">
-              <p className="text-[10px] font-mono opacity-60 break-all border border-base-300 rounded p-2 bg-base-200/30" title={repoPath}>
-                {repoPath}
-              </p>
-            </div>
           )}
+        </div>
 
-          <div className="space-y-1">
-            <Link
-              href={getHref()}
-              className={cn(
-                "btn btn-ghost w-full justify-start font-normal",
-                isCollapsed ? "px-0 justify-center" : "",
-                isActive('history') && "btn-active font-medium"
-              )}
-              title={isCollapsed ? "History" : undefined}
+        {/* Repository Path Indicator (Expanded) */}
+        {!isCollapsed && repoPath && (
+          <div className="px-3 pt-2.5 pb-1 shrink-0">
+            <div 
+              className="px-2 py-1 rounded bg-base-100 border border-base-300/60 text-[10px] font-mono text-base-content/50 truncate" 
+              title={repoPath}
             >
-              <i className={cn("iconoir-git-fork text-[20px]", !isCollapsed && "mr-2")} aria-hidden="true" />
-              {!isCollapsed && "History"}
-            </Link>
+              {repoPath}
+            </div>
+          </div>
+        )}
 
-            <Link
-              href={getHref('/conflicts')}
-              className={cn(
-                "btn btn-ghost w-full justify-start font-normal",
-                isCollapsed ? "px-0 justify-center" : "",
-                isActive('conflicts') && "btn-active font-medium"
-              )}
-              title={isCollapsed ? `Conflicts${conflictsCount > 0 ? ` (${conflictsCount})` : ''}` : undefined}
-            >
-              <div className={cn("relative flex items-center", !isCollapsed && "mr-2")}>
-                <i className="iconoir-warning-triangle text-[20px]" aria-hidden="true" />
-                {isCollapsed && conflictsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 badge badge-error badge-xs scale-75">
-                    {conflictsCount > 99 ? '99+' : conflictsCount}
-                  </span>
-                )}
-              </div>
-              {!isCollapsed && (
-                <span className="flex-1 flex justify-between items-center">
-                  Conflicts
-                  {conflictsCount > 0 && <span className="badge badge-sm badge-error">{conflictsCount}</span>}
+        {/* Nav Links */}
+        <nav className="p-2 space-y-1 overflow-y-auto flex-1">
+          <Link
+            href={getHref()}
+            className={cn(
+              "flex items-center gap-2.5 rounded-md text-xs font-medium transition-colors",
+              isCollapsed ? "justify-center h-8 w-8 mx-auto" : "px-2.5 py-1.5 w-full",
+              isActive('history')
+                ? "bg-base-100 text-base-content shadow-xs font-semibold border border-base-300/60"
+                : "text-base-content/70 hover:text-base-content hover:bg-base-200/60"
+            )}
+            title={isCollapsed ? "History" : undefined}
+          >
+            <i className="iconoir-git-fork text-[17px] shrink-0" aria-hidden="true" />
+            {!isCollapsed && <span>History</span>}
+          </Link>
+
+          <Link
+            href={getHref('/conflicts')}
+            className={cn(
+              "flex items-center gap-2.5 rounded-md text-xs font-medium transition-colors relative",
+              isCollapsed ? "justify-center h-8 w-8 mx-auto" : "px-2.5 py-1.5 w-full",
+              isActive('conflicts')
+                ? "bg-base-100 text-base-content shadow-xs font-semibold border border-base-300/60"
+                : "text-base-content/70 hover:text-base-content hover:bg-base-200/60"
+            )}
+            title={isCollapsed ? `Conflicts${conflictsCount > 0 ? ` (${conflictsCount})` : ''}` : undefined}
+          >
+            <div className="relative shrink-0 flex items-center">
+              <i className="iconoir-warning-triangle text-[17px]" aria-hidden="true" />
+              {isCollapsed && conflictsCount > 0 && (
+                <span className="absolute -top-1 -right-1.5 badge badge-error badge-xs scale-75">
+                  {conflictsCount > 99 ? '99+' : conflictsCount}
                 </span>
               )}
-            </Link>
+            </div>
+            {!isCollapsed && (
+              <span className="flex-1 flex justify-between items-center">
+                <span>Conflicts</span>
+                {conflictsCount > 0 && <span className="badge badge-xs badge-error text-[10px]">{conflictsCount}</span>}
+              </span>
+            )}
+          </Link>
 
-            <Link
-              href={getHref('/stashes')}
-              className={cn(
-                "btn btn-ghost w-full justify-start font-normal",
-                isCollapsed ? "px-0 justify-center" : "",
-                isActive('stashes') && "btn-active font-medium"
-              )}
-              title={isCollapsed ? "Stashes" : undefined}
-            >
-              <i className={cn("iconoir-download-square text-[20px]", !isCollapsed && "mr-2")} aria-hidden="true" />
-              {!isCollapsed && "Stashes"}
-            </Link>
+          <Link
+            href={getHref('/stashes')}
+            className={cn(
+              "flex items-center gap-2.5 rounded-md text-xs font-medium transition-colors",
+              isCollapsed ? "justify-center h-8 w-8 mx-auto" : "px-2.5 py-1.5 w-full",
+              isActive('stashes')
+                ? "bg-base-100 text-base-content shadow-xs font-semibold border border-base-300/60"
+                : "text-base-content/70 hover:text-base-content hover:bg-base-200/60"
+            )}
+            title={isCollapsed ? "Stashes" : undefined}
+          >
+            <i className="iconoir-download-square text-[17px] shrink-0" aria-hidden="true" />
+            {!isCollapsed && <span>Stashes</span>}
+          </Link>
 
-            <Link
-              href={getHref('/custom-scripts')}
-              className={cn(
-                "btn btn-ghost w-full justify-start font-normal",
-                isCollapsed ? "px-0 justify-center" : "",
-                isActive('custom-scripts') && "btn-active font-medium"
-              )}
-              title={isCollapsed ? "Custom scripts" : undefined}
-            >
-              <i className={cn("iconoir-terminal text-[20px]", !isCollapsed && "mr-2")} aria-hidden="true" />
-              {!isCollapsed && "Custom scripts"}
-            </Link>
+          <Link
+            href={getHref('/custom-scripts')}
+            className={cn(
+              "flex items-center gap-2.5 rounded-md text-xs font-medium transition-colors",
+              isCollapsed ? "justify-center h-8 w-8 mx-auto" : "px-2.5 py-1.5 w-full",
+              isActive('custom-scripts')
+                ? "bg-base-100 text-base-content shadow-xs font-semibold border border-base-300/60"
+                : "text-base-content/70 hover:text-base-content hover:bg-base-200/60"
+            )}
+            title={isCollapsed ? "Custom scripts" : undefined}
+          >
+            <i className="iconoir-terminal text-[17px] shrink-0" aria-hidden="true" />
+            {!isCollapsed && <span>Custom scripts</span>}
+          </Link>
 
-            <Link
-              href={getHref('/settings')}
-              className={cn(
-                "btn btn-ghost w-full justify-start font-normal",
-                isCollapsed ? "px-0 justify-center" : "",
-                isActive('settings') && "btn-active font-medium"
-              )}
-              title={isCollapsed ? "Settings" : undefined}
-            >
-              <i className={cn("iconoir-settings text-[20px]", !isCollapsed && "mr-2")} aria-hidden="true" />
-              {!isCollapsed && "Settings"}
-            </Link>
-          </div>
-        </div>
+          <Link
+            href={getHref('/settings')}
+            className={cn(
+              "flex items-center gap-2.5 rounded-md text-xs font-medium transition-colors",
+              isCollapsed ? "justify-center h-8 w-8 mx-auto" : "px-2.5 py-1.5 w-full",
+              isActive('settings')
+                ? "bg-base-100 text-base-content shadow-xs font-semibold border border-base-300/60"
+                : "text-base-content/70 hover:text-base-content hover:bg-base-200/60"
+            )}
+            title={isCollapsed ? "Settings" : undefined}
+          >
+            <i className="iconoir-settings text-[17px] shrink-0" aria-hidden="true" />
+            {!isCollapsed && <span>Settings</span>}
+          </Link>
+        </nav>
       </div>
 
-      <div className={cn("absolute bottom-4 left-0 w-full", isCollapsed ? "px-2" : "px-6")}>
-        <div className={cn("flex items-center", isCollapsed ? "justify-center" : "gap-2")}>
-          <button
-            className="btn btn-ghost btn-sm btn-square"
-            onClick={() => setSettingsOpen(true)}
-            title={isCollapsed ? "Preferences" : undefined}
-          >
-            <i className="iconoir-ios-settings text-[20px]" aria-hidden="true" />
-          </button>
-          {!isCollapsed && <span className="text-xs opacity-70">Preferences</span>}
-        </div>
+      {/* Bottom Footer Section */}
+      <div className={cn(
+        "border-t border-base-300 shrink-0",
+        isCollapsed ? "p-2 flex flex-col items-center gap-1.5" : "p-2 flex items-center justify-between"
+      )}>
+        {!isCollapsed ? (
+          <>
+            <button
+              className="btn btn-ghost btn-xs gap-1.5 text-xs text-base-content/70 hover:text-base-content font-normal"
+              onClick={() => setSettingsOpen(true)}
+              title="Preferences"
+            >
+              <i className="iconoir-settings text-[15px]" aria-hidden="true" />
+              <span>Preferences</span>
+            </button>
+            <div className="flex items-center gap-1">
+              <ThemeToggle />
+              <Link
+                href="/"
+                className="btn btn-ghost btn-xs btn-square text-base-content/70 hover:text-base-content"
+                title="All Repositories"
+              >
+                <i className="iconoir-home text-[15px]" aria-hidden="true" />
+              </Link>
+            </div>
+          </>
+        ) : (
+          <>
+            <ThemeToggle />
+            <button
+              className="btn btn-ghost btn-xs btn-square text-base-content/70 hover:text-base-content"
+              onClick={() => setSettingsOpen(true)}
+              title="Preferences"
+            >
+              <i className="iconoir-settings text-[15px]" aria-hidden="true" />
+            </button>
+            <Link
+              href="/"
+              className="btn btn-ghost btn-xs btn-square text-base-content/70 hover:text-base-content"
+              title="All Repositories"
+            >
+              <i className="iconoir-home text-[15px]" aria-hidden="true" />
+            </Link>
+          </>
+        )}
       </div>
 
       <HomeSettingsModal

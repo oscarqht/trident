@@ -9,6 +9,8 @@ import { FileSystemBrowser } from './fs-browser';
 import { toast } from '@/hooks/use-toast';
 import { HomeSettingsModal } from './home-settings-modal';
 import { getRepositoryDisplayName, formatRelativeTime, formatFullDateTime } from '@/lib/utils';
+import { ThemeToggle } from './theme-toggle';
+import Image from 'next/image';
 import { useEscapeDismiss } from '@/hooks/use-escape-dismiss';
 
 function getRemoteHostname(url: string): string | null {
@@ -64,6 +66,7 @@ export function RepoList() {
     const [cloneFolderName, setCloneFolderName] = useState('');
     const [cloneFolderNameTouched, setCloneFolderNameTouched] = useState(false);
     const [cloneCredentialId, setCloneCredentialId] = useState('auto');
+    const [searchQuery, setSearchQuery] = useState('');
     const router = useRouter();
     const closeCloneDialog = () => {
         setCloneFolderBrowserOpen(false);
@@ -83,6 +86,15 @@ export function RepoList() {
             return aName.localeCompare(bName);
         });
     }, [repos]);
+
+    const filteredRepos = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        if (!q) return sortedRepos;
+        return sortedRepos.filter((repo) => {
+            const name = getRepositoryDisplayName(repo).toLowerCase();
+            return name.includes(q) || repo.path.toLowerCase().includes(q);
+        });
+    }, [sortedRepos, searchQuery]);
     // Load settings on mount
     useEffect(() => {
         const loadSettings = async () => {
@@ -318,97 +330,180 @@ export function RepoList() {
         void handleConfirmInitRepo();
     });
 
-    if (isLoading) return <div className="p-12 text-center opacity-70">Loading repositories...</div>;
+    if (isLoading) {
+        return (
+            <div className="flex-1 flex items-center justify-center p-12">
+                <span className="loading loading-spinner text-base-content/40"></span>
+            </div>
+        );
+    }
 
     return (
-        <div className="container mx-auto max-w-5xl py-12 px-6">
-            <div className="flex items-center justify-between mb-8">
-                <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Repositories</h1>
-                    <p className="text-sm opacity-70 mt-1">Manage your git repositories.</p>
+        <div className="w-full max-w-7xl mx-auto px-6 py-6 flex flex-col gap-5 flex-1">
+            {/* Top Minimalist Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-base-300">
+                <div className="flex items-center gap-3">
+                    <Image
+                        src="/icon.png"
+                        alt="Trident"
+                        width={28}
+                        height={28}
+                        className="rounded-md shrink-0"
+                        priority
+                    />
+                    <div>
+                        <h1 className="text-lg font-bold tracking-tight text-base-content leading-none">Repositories</h1>
+                        <p className="text-xs text-base-content/60 mt-1">Manage and explore your Git repositories</p>
+                    </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <button className="btn btn-square btn-ghost" onClick={() => setSettingsOpen(true)} title="Settings">
-                        <i className="iconoir-ios-settings text-[20px]" aria-hidden="true" />
+
+                <div className="flex items-center flex-wrap gap-2">
+                    {/* Search filter input */}
+                    <div className="relative">
+                        <i className="iconoir-search absolute left-2.5 top-1/2 -translate-y-1/2 text-[14px] text-base-content/40 pointer-events-none" aria-hidden="true" />
+                        <input
+                            type="text"
+                            placeholder="Filter repos..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="input input-sm input-bordered pl-8 pr-3 w-48 text-xs bg-base-100 focus:w-64 transition-all duration-150"
+                        />
+                        {searchQuery && (
+                            <button
+                                onClick={() => setSearchQuery('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs opacity-50 hover:opacity-100"
+                            >
+                                ✕
+                            </button>
+                        )}
+                    </div>
+
+                    <ThemeToggle />
+
+                    <button
+                        className="btn btn-sm btn-ghost btn-square"
+                        onClick={() => setSettingsOpen(true)}
+                        title="Settings"
+                    >
+                        <i className="iconoir-settings text-[18px]" aria-hidden="true" />
                     </button>
-                    <Link href="/credentials" className="btn gap-2">
-                        <i className="iconoir-key text-[20px]" aria-hidden="true" />
+
+                    <a
+                        href="https://github.com/oscarqht/trident"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-sm btn-ghost btn-square"
+                        title="View GitHub Repository"
+                    >
+                        <i className="iconoir-github text-[18px]" aria-hidden="true" />
+                    </a>
+
+                    <div className="h-4 w-px bg-base-300 mx-1 hidden sm:block" />
+
+                    <Link href="/credentials" className="btn btn-sm btn-ghost border border-base-300 gap-1.5 text-xs">
+                        <i className="iconoir-key text-[15px]" aria-hidden="true" />
                         Credentials
                     </Link>
-                    <button onClick={openCloneDialog} className="btn gap-2">
-                        <i className="iconoir-git-fork text-[20px]" aria-hidden="true" />
+                    <button onClick={openCloneDialog} className="btn btn-sm btn-ghost border border-base-300 gap-1.5 text-xs">
+                        <i className="iconoir-git-fork text-[15px]" aria-hidden="true" />
                         Clone
                     </button>
-                    <button onClick={() => setBrowserOpen(true)} className="btn btn-accent gap-2">
-                        <i className="iconoir-plus-circle text-[20px]" aria-hidden="true" />
+                    <button onClick={() => setBrowserOpen(true)} className="btn btn-sm btn-primary gap-1.5 text-xs">
+                        <i className="iconoir-plus text-[16px]" aria-hidden="true" />
                         Add Repository
                     </button>
                 </div>
             </div>
 
-            <div className="overflow-x-auto border border-base-300 rounded-lg bg-base-100">
-                <table className="table w-full">
-                    <thead className="bg-base-200/50">
-                        <tr>
-                            <th>Name</th>
-                            <th>Path</th>
-                            <th>Last Active</th>
-                            <th className="text-right">Action</th>
+            {/* Repositories Table / List */}
+            <div className="border border-base-300 rounded-lg overflow-hidden bg-base-100">
+                <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                        <tr className="border-b border-base-300 bg-base-200/50 text-[11px] font-semibold uppercase tracking-wider text-base-content/60">
+                            <th className="py-2.5 px-4 font-semibold">Repository</th>
+                            <th className="py-2.5 px-4 font-semibold hidden md:table-cell">Path</th>
+                            <th className="py-2.5 px-4 font-semibold">Last Active</th>
+                            <th className="py-2.5 px-4 font-semibold text-right">Actions</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        {sortedRepos.length === 0 && (
+                    <tbody className="divide-y divide-base-300/60">
+                        {filteredRepos.length === 0 && (
                             <tr>
-                                <td colSpan={4} className="text-center py-12 text-muted-foreground">
-                                    <div className="flex flex-col items-center gap-2">
-                                        <p>No repositories found.</p>
-                                        <button className="btn btn-link" onClick={() => setBrowserOpen(true)}>Add your first repository</button>
+                                <td colSpan={4} className="text-center py-16 text-base-content/60">
+                                    <div className="flex flex-col items-center gap-3 max-w-sm mx-auto">
+                                        <div className="w-12 h-12 rounded-full bg-base-200 flex items-center justify-center text-base-content/40">
+                                            <i className="iconoir-folder-search text-2xl" aria-hidden="true" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="font-medium text-sm text-base-content">
+                                                {searchQuery ? 'No matching repositories found' : 'No repositories added yet'}
+                                            </p>
+                                            <p className="text-xs text-base-content/60">
+                                                {searchQuery ? `No results matching "${searchQuery}"` : 'Open a local Git repository or clone one from remote to get started.'}
+                                            </p>
+                                        </div>
+                                        {!searchQuery && (
+                                            <div className="flex items-center gap-2 pt-1">
+                                                <button className="btn btn-sm btn-primary gap-1.5 text-xs" onClick={() => setBrowserOpen(true)}>
+                                                    <i className="iconoir-plus text-sm" />
+                                                    Add Repository
+                                                </button>
+                                                <button className="btn btn-sm btn-ghost border border-base-300 gap-1.5 text-xs" onClick={openCloneDialog}>
+                                                    <i className="iconoir-git-fork text-sm" />
+                                                    Clone
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </td>
                             </tr>
                         )}
-                        {sortedRepos.map((repo) => {
+                        {filteredRepos.map((repo) => {
                             const repoDisplayName = getRepositoryDisplayName(repo);
                             return (
-                            <tr
-                                key={repo.path}
-                                className="hover:bg-base-200/30 cursor-pointer group"
-                                onClick={() => router.push(`/workspace?path=${encodeURIComponent(repo.path)}`)}
-                            >
-                                <td>
-                                    <div className="flex items-center gap-3">
-                                        {repo.icon ? (
-                                            <span className="text-[20px] leading-none w-5 text-center" aria-hidden="true">{repo.icon}</span>
-                                        ) : (
-                                            <i className="iconoir-bookmark text-[20px] opacity-70 group-hover:text-primary transition-colors" aria-hidden="true" />
-                                        )}
-                                        <span className="font-bold text-sm">{repoDisplayName}</span>
-                                    </div>
-                                </td>
-                                <td className="text-sm opacity-70 font-mono truncate max-w-xs" title={repo.path}>
-                                    {repo.path}
-                                </td>
-                                <td className="text-sm opacity-70 whitespace-nowrap" title={formatFullDateTime(repo.lastOpenedAt)}>
-                                    {formatRelativeTime(repo.lastOpenedAt)}
-                                </td>
-                                <td className="text-right">
-                                    <div className="flex items-center justify-end gap-1">
-                                        <Link
-                                            href={`/workspace?path=${encodeURIComponent(repo.path)}`}
-                                            className="btn btn-ghost btn-sm btn-square"
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
-                                            <i className="iconoir-arrow-right text-[16px]" aria-hidden="true" />
-                                        </Link>
-                                        <button
-                                            className="btn btn-ghost btn-sm btn-square text-error hover:bg-error/10"
-                                            onClick={(e) => handleDeleteClick(e, { path: repo.path, displayName: repoDisplayName })}
-                                        >
-                                            <i className="iconoir-trash text-[16px]" aria-hidden="true" />
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
+                                <tr
+                                    key={repo.path}
+                                    className="hover:bg-base-200/40 cursor-pointer transition-colors group"
+                                    onClick={() => router.push(`/workspace?path=${encodeURIComponent(repo.path)}`)}
+                                >
+                                    <td className="py-3 px-4">
+                                        <div className="flex items-center gap-2.5">
+                                            {repo.icon ? (
+                                                <span className="text-[18px] leading-none w-5 text-center shrink-0" aria-hidden="true">{repo.icon}</span>
+                                            ) : (
+                                                <i className="iconoir-folder text-[18px] text-base-content/40 group-hover:text-primary transition-colors shrink-0" aria-hidden="true" />
+                                            )}
+                                            <span className="font-semibold text-sm text-base-content group-hover:text-primary transition-colors truncate">
+                                                {repoDisplayName}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td className="py-3 px-4 hidden md:table-cell text-base-content/60 font-mono text-xs truncate max-w-md" title={repo.path}>
+                                        {repo.path}
+                                    </td>
+                                    <td className="py-3 px-4 text-base-content/60 whitespace-nowrap" title={formatFullDateTime(repo.lastOpenedAt)}>
+                                        {formatRelativeTime(repo.lastOpenedAt)}
+                                    </td>
+                                    <td className="py-3 px-4 text-right">
+                                        <div className="flex items-center justify-end gap-1">
+                                            <Link
+                                                href={`/workspace?path=${encodeURIComponent(repo.path)}`}
+                                                className="btn btn-ghost btn-xs btn-square opacity-70 group-hover:opacity-100"
+                                                onClick={(e) => e.stopPropagation()}
+                                                title="Open in Workspace"
+                                            >
+                                                <i className="iconoir-arrow-right text-[15px]" aria-hidden="true" />
+                                            </Link>
+                                            <button
+                                                className="btn btn-ghost btn-xs btn-square text-error/70 hover:text-error hover:bg-error/10 opacity-70 group-hover:opacity-100"
+                                                onClick={(e) => handleDeleteClick(e, { path: repo.path, displayName: repoDisplayName })}
+                                                title="Remove Repository"
+                                            >
+                                                <i className="iconoir-trash text-[15px]" aria-hidden="true" />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
                             );
                         })}
                     </tbody>

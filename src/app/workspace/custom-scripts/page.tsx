@@ -117,25 +117,25 @@ function WorkspaceCustomScriptsContent() {
   };
 
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Custom Scripts</h1>
-        <p className="text-sm opacity-70 mt-2">
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
+      <div className="pb-3 border-b border-base-300">
+        <h1 className="text-xl font-bold tracking-tight text-base-content">Custom Scripts</h1>
+        <p className="text-xs text-base-content/60 mt-0.5">
           Manage custom bash scripts for this repository. Scripts appear in branch context menus.
         </p>
       </div>
 
-      <div className="card bg-base-100 shadow-xl border border-base-200">
-        <div className="card-body">
-          <h2 className="card-title">{editingScriptId ? 'Edit Script' : 'New Script'}</h2>
+      <div className="border border-base-300 rounded-lg p-5 bg-base-100">
+        <div>
+          <h2 className="text-sm font-semibold text-base-content mb-4">{editingScriptId ? 'Edit Script' : 'New Script'}</h2>
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="form-control">
-              <label className="label">
-                <span className="label-text">Name</span>
+              <label className="label pt-0 pb-1.5">
+                <span className="label-text text-xs font-medium">Name</span>
               </label>
               <input
                 type="text"
-                className="input input-bordered w-full"
+                className="input input-sm input-bordered w-full text-xs"
                 value={draft.name}
                 onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
                 placeholder="Example: Run tests"
@@ -144,11 +144,11 @@ function WorkspaceCustomScriptsContent() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Target</span>
+                <label className="label pt-0 pb-1.5">
+                  <span className="label-text text-xs font-medium">Target</span>
                 </label>
                 <select
-                  className="select select-bordered w-full"
+                  className="select select-sm select-bordered w-full text-xs"
                   value={draft.target}
                   onChange={(e) => setDraft((prev) => ({ ...prev, target: e.target.value as RepositoryCustomScriptTarget }))}
                 >
@@ -157,11 +157,11 @@ function WorkspaceCustomScriptsContent() {
               </div>
 
               <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Action</span>
+                <label className="label pt-0 pb-1.5">
+                  <span className="label-text text-xs font-medium">Action</span>
                 </label>
                 <select
-                  className="select select-bordered w-full"
+                  className="select select-sm select-bordered w-full text-xs"
                   value={draft.action}
                   onChange={(e) => setDraft((prev) => ({ ...prev, action: e.target.value as RepositoryCustomScriptAction }))}
                 >
@@ -171,11 +171,11 @@ function WorkspaceCustomScriptsContent() {
             </div>
 
             <div className="form-control">
-              <label className="label">
-                <span className="label-text">Script Content</span>
+              <label className="label pt-0 pb-1.5">
+                <span className="label-text text-xs font-medium">Script Content</span>
               </label>
               <textarea
-                className="textarea textarea-bordered w-full h-56 font-mono text-sm"
+                className="textarea textarea-bordered w-full h-48 font-mono text-xs leading-relaxed"
                 value={draft.content}
                 onChange={(e) => setDraft((prev) => ({ ...prev, content: e.target.value }))}
                 placeholder={'#!/usr/bin/env bash\nset -euo pipefail\n\necho "Hello from custom script"'}
@@ -183,12 +183,12 @@ function WorkspaceCustomScriptsContent() {
             </div>
 
             {formError && (
-              <div className="alert alert-error py-2">
+              <div className="alert alert-error py-2 text-xs">
                 <span>{formError}</span>
               </div>
             )}
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 pt-1 border-t border-base-200">
               <button type="submit" className="btn btn-primary btn-sm" disabled={updateRepository.isPending}>
                 {editingScriptId ? 'Update Script' : 'Add Script'}
               </button>
@@ -202,32 +202,32 @@ function WorkspaceCustomScriptsContent() {
         </div>
       </div>
 
-      <div className="card bg-base-100 shadow-xl border border-base-200">
-        <div className="card-body">
-          <h2 className="card-title">Saved Scripts</h2>
+      <div className="border border-base-300 rounded-lg p-5 bg-base-100">
+        <div>
+          <h2 className="text-sm font-semibold text-base-content mb-4">Saved Scripts</h2>
           {scripts.length === 0 ? (
-            <p className="text-sm opacity-60">No custom scripts yet.</p>
+            <p className="text-xs text-base-content/60 py-4 text-center">No custom scripts yet.</p>
           ) : (
             <div className="space-y-3">
               {scripts.map((script) => (
-                <div key={script.id} className="border border-base-300 rounded-lg p-4 bg-base-100">
+                <div key={script.id} className="border border-base-300 rounded-lg p-3.5 bg-base-100">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="font-medium truncate">{script.name}</div>
-                      <div className="text-xs opacity-60 mt-1">
+                      <div className="font-semibold text-xs truncate">{script.name}</div>
+                      <div className="text-[11px] text-base-content/60 mt-0.5">
                         Target: Branch | Action: Run bash script
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button className="btn btn-ghost btn-xs" onClick={() => handleEdit(script)} disabled={updateRepository.isPending}>
                         Edit
                       </button>
-                      <button className="btn btn-ghost btn-xs text-error" onClick={() => handleDelete(script.id)} disabled={updateRepository.isPending}>
+                      <button className="btn btn-ghost btn-xs text-error hover:bg-error/10" onClick={() => handleDelete(script.id)} disabled={updateRepository.isPending}>
                         Delete
                       </button>
                     </div>
                   </div>
-                  <pre className="mt-3 text-xs font-mono bg-base-200 rounded p-3 overflow-auto max-h-36 whitespace-pre-wrap break-words">{script.content}</pre>
+                  <pre className="mt-2.5 text-xs font-mono bg-base-200/50 border border-base-300/40 rounded p-2.5 overflow-auto max-h-36 whitespace-pre-wrap break-words">{script.content}</pre>
                 </div>
               ))}
             </div>

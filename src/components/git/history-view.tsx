@@ -2998,9 +2998,9 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   }, [localBranchTree, currentBranch, mainWorktreeBranch]);
 
   const branchTreePopoverContent = (
-    <div className="w-[22rem] max-w-[calc(100vw-2rem)] flex flex-col border border-base-300 bg-base-100 rounded-box shadow-xl overflow-hidden">
-      <div className="px-4 border-b border-base-300 flex items-center justify-between bg-base-100 h-[57px] shrink-0">
-        <h2 className="font-bold text-lg">Branches</h2>
+    <div className="w-[22rem] max-w-[calc(100vw-2rem)] flex flex-col border border-base-300 bg-base-100 rounded-lg shadow-lg overflow-hidden">
+      <div className="px-3.5 border-b border-base-300 flex items-center justify-between bg-base-100 h-11 shrink-0">
+        <h2 className="font-semibold text-sm">Branches</h2>
         <div className="flex items-center gap-1">
           {hasVisibilityFilters && (
             <div className="tooltip tooltip-left z-20" data-tip="Clear filters">
@@ -4468,18 +4468,18 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 bg-base-100">
-        <div className="h-[57px] flex items-center justify-between gap-3 px-6 border-b border-base-300 shrink-0 history-header">
+        <div className="h-12 flex items-center justify-between gap-3 px-4 border-b border-base-300 shrink-0 history-header bg-base-100">
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <h1 className="font-bold text-lg">History</h1>
+            <h1 className="font-semibold text-base tracking-tight shrink-0">History</h1>
             <div className="relative" ref={branchPopoverRef}>
               <button
-                className="btn btn-sm gap-2 max-w-[24rem] header-icon-btn"
+                className="btn btn-sm btn-ghost border border-base-300 gap-1.5 max-w-[20rem] header-icon-btn text-xs font-medium"
                 onClick={() => setIsBranchPopoverOpen(prev => !prev)}
                 title={currentBranchLabel}
                 aria-label={currentBranchLabel}
               >
                 <span className="truncate branch-selector-label">{currentBranchLabel}</span>
-                <i className={cn("iconoir-nav-arrow-down text-[16px] shrink-0 transition-transform", isBranchPopoverOpen && "rotate-180")} aria-hidden="true" />
+                <i className={cn("iconoir-nav-arrow-down text-[14px] shrink-0 transition-transform", isBranchPopoverOpen && "rotate-180")} aria-hidden="true" />
               </button>
               {isBranchPopoverOpen && (
                 <div className="absolute left-0 top-full mt-2 z-50">
@@ -4487,9 +4487,9 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
-                className="btn btn-sm gap-2 header-icon-btn"
+                className="btn btn-sm btn-ghost border border-base-300 gap-1.5 header-icon-btn text-xs font-medium"
                 onClick={() => void handleFetchFromAllRemotes()}
                 disabled={isFetchingAllRemotes || isPullingAllBranches || isPullOpen || isPushOpen}
                 title="Fetch latest changes from all remotes"
@@ -4498,12 +4498,12 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 {isFetchingAllRemotes ? (
                   <span className="loading loading-spinner loading-xs"></span>
                 ) : (
-                  <i className="iconoir-refresh text-[16px]" aria-hidden="true" />
+                  <i className="iconoir-refresh text-[15px]" aria-hidden="true" />
                 )}
                 <span className="header-btn-label">Fetch</span>
               </button>
               <button
-                className="btn btn-sm gap-2 header-icon-btn"
+                className="btn btn-sm btn-ghost border border-base-300 gap-1.5 header-icon-btn text-xs font-medium"
                 onClick={confirmPullCurrentBranch}
                 disabled={!!pullActionDisabledReason || isPullingAllBranches || isPullOpen || isPushOpen}
                 title={pullActionDisabledReason || `Pull from ${currentTrackingBranch?.upstream}`}
@@ -4512,12 +4512,12 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 {pullLoadingRemotes ? (
                   <span className="loading loading-spinner loading-xs"></span>
                 ) : (
-                  <i className="iconoir-arrow-down text-[16px]" aria-hidden="true" />
+                  <i className="iconoir-arrow-down text-[15px]" aria-hidden="true" />
                 )}
                 <span className="header-btn-label">Pull</span>
               </button>
               <button
-                className="btn btn-sm gap-2 header-icon-btn"
+                className="btn btn-sm btn-ghost border border-base-300 gap-1.5 header-icon-btn text-xs font-medium"
                 onClick={() => void handlePullAllBranches()}
                 disabled={!!pullAllActionDisabledReason || isPullOpen || isPushOpen || isPullingAllBranches}
                 title={pullAllActionDisabledReason || 'Pull all local branches from tracking remote branches'}
@@ -4526,12 +4526,12 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 {isPullingAllBranches ? (
                   <span className="loading loading-spinner loading-xs"></span>
                 ) : (
-                  <i className="iconoir-fast-arrow-down text-[16px]" aria-hidden="true" />
+                  <i className="iconoir-fast-arrow-down text-[15px]" aria-hidden="true" />
                 )}
                 <span className="header-btn-label">Pull All</span>
               </button>
               <button
-                className="btn btn-sm gap-2 header-icon-btn"
+                className="btn btn-sm btn-ghost border border-base-300 gap-1.5 header-icon-btn text-xs font-medium"
                 onClick={confirmPushCurrentBranch}
                 disabled={!!pushActionDisabledReason || isPullingAllBranches || isPullOpen || isPushOpen}
                 title={pushActionDisabledReason || (currentTrackingBranch ? `Push to ${currentTrackingBranch.upstream}` : 'Push current branch to remote')}
@@ -4540,25 +4540,25 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                 {pushLoadingRemotes ? (
                   <span className="loading loading-spinner loading-xs"></span>
                 ) : (
-                  <i className="iconoir-arrow-up text-[16px]" aria-hidden="true" />
+                  <i className="iconoir-arrow-up text-[15px]" aria-hidden="true" />
                 )}
                 <span className="header-btn-label">Push</span>
               </button>
             </div>
           </div>
-          <div className="shrink-0 flex items-center gap-2">
+          <div className="shrink-0 flex items-center gap-1.5">
             <div className="relative" ref={customScriptsMenuRef}>
               <button
-                className="btn btn-sm gap-2 header-icon-btn"
+                className="btn btn-sm btn-ghost border border-base-300 gap-1.5 header-icon-btn text-xs font-medium"
                 onClick={() => setIsCustomScriptsMenuOpen((prev) => !prev)}
                 title={`Run custom scripts on ${headerScriptTargetRef.label}`}
                 aria-label="Custom Scripts"
               >
-                <i className="iconoir-code text-[16px]" aria-hidden="true" />
+                <i className="iconoir-code text-[15px]" aria-hidden="true" />
                 <span className="header-btn-label">Custom Scripts</span>
                 <i
                   className={cn(
-                    "iconoir-nav-arrow-down text-[14px] shrink-0 transition-transform",
+                    "iconoir-nav-arrow-down text-[13px] shrink-0 transition-transform",
                     isCustomScriptsMenuOpen && "rotate-180"
                   )}
                   aria-hidden="true"
@@ -4566,7 +4566,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
               </button>
 
               {isCustomScriptsMenuOpen && (
-                <div className="absolute right-0 top-full mt-2 z-50 w-72 bg-base-100 rounded-lg shadow-xl border border-base-300 p-2 text-xs">
+                <div className="absolute right-0 top-full mt-2 z-50 w-72 bg-base-100 rounded-lg shadow-lg border border-base-300 p-2 text-xs">
                   <div className="px-3 py-2 border-b border-base-200">
                     <div className="text-[10px] uppercase font-bold tracking-wider opacity-60">
                       Target Ref
@@ -4618,7 +4618,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
             </div>
 
             <button
-              className="btn btn-sm gap-2 header-icon-btn"
+              className="btn btn-sm btn-ghost border border-base-300 gap-1.5 header-icon-btn text-xs font-medium"
               onClick={() => void handleOpenRepoTerminal()}
               disabled={isOpeningRepoTerminal}
               title="Open terminal in repository folder"
@@ -4627,12 +4627,12 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
               {isOpeningRepoTerminal ? (
                 <span className="loading loading-spinner loading-xs"></span>
               ) : (
-                <i className="iconoir-terminal text-[16px]" aria-hidden="true" />
+                <i className="iconoir-terminal text-[15px]" aria-hidden="true" />
               )}
               <span className="header-btn-label">Open Terminal</span>
             </button>
             <button
-              className="btn btn-sm gap-2 header-icon-btn"
+              className="btn btn-sm btn-ghost border border-base-300 gap-1.5 header-icon-btn text-xs font-medium"
               onClick={() => void handleOpenRepoFolder()}
               disabled={isOpeningRepoFolder}
               title="Open repository folder in Finder"
@@ -4641,7 +4641,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
               {isOpeningRepoFolder ? (
                 <span className="loading loading-spinner loading-xs"></span>
               ) : (
-                <i className="iconoir-folder text-[16px]" aria-hidden="true" />
+                <i className="iconoir-folder text-[15px]" aria-hidden="true" />
               )}
               <span className="header-btn-label">Open Repo Folder</span>
             </button>

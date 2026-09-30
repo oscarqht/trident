@@ -257,7 +257,7 @@ export function ConflictResolverView({ repoPath }: { repoPath: string }) {
   return (
     <div className="flex h-full overflow-hidden">
       <div className="w-80 border-r border-base-300 flex flex-col bg-base-200/30">
-        <div className="h-[57px] px-4 border-b border-base-300 flex items-center justify-between bg-base-100">
+        <div className="h-12 px-4 border-b border-base-300 flex items-center justify-between bg-base-100">
           <h1 className="font-bold text-lg">Conflicts</h1>
           <button className="btn btn-ghost btn-sm btn-square" onClick={() => void refreshAll()} disabled={isActionPending} title="Refresh">
             <i className="iconoir-refresh-circle text-[16px]" aria-hidden="true" />

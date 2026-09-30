@@ -5,6 +5,7 @@ import { useCredentials, useCreateCredential, useUpdateCredential, useDeleteCred
 import type { Credential, GitLabCredential } from '@/hooks/use-credentials';
 import Image from 'next/image';
 import Link from 'next/link';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { useEscapeDismiss } from '@/hooks/use-escape-dismiss';
 
 type CredentialFormType = 'github' | 'gitlab' | null;
@@ -120,74 +121,71 @@ export default function CredentialsPage() {
   });
 
   return (
-    <main className="min-h-screen bg-base-100">
-      <div className="container mx-auto max-w-4xl py-12 px-6">
+    <main className="min-h-screen bg-base-100 flex flex-col">
+      <div className="w-full max-w-5xl mx-auto px-6 py-6 flex flex-col gap-6 flex-1">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="btn btn-ghost btn-square">
-              <i className="iconoir-arrow-left text-[20px]" aria-hidden="true" />
+        <div className="flex items-center justify-between pb-3 border-b border-base-300">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="btn btn-ghost btn-sm btn-square">
+              <i className="iconoir-arrow-left text-[18px]" aria-hidden="true" />
             </Link>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">Credentials</h1>
-              <p className="text-sm opacity-70 mt-1">
+              <h1 className="text-xl font-bold tracking-tight text-base-content leading-none">Credentials</h1>
+              <p className="text-xs text-base-content/60 mt-1">
                 Manage your remote repository credentials
               </p>
             </div>
           </div>
+          <ThemeToggle />
         </div>
 
         {/* Add Credential Buttons */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div
-            className="card bg-base-100 shadow-lg hover:shadow-xl transition-shadow cursor-pointer border border-base-200"
+            className="border border-base-300 rounded-lg p-4 bg-base-100 hover:border-primary/50 transition-colors cursor-pointer group flex flex-col justify-between"
             onClick={() => handleOpenCreate('github')}
           >
-            <div className="card-body p-6">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-base-200 rounded-lg">
-                  <ProviderIcon type="github" size={24} className="h-6 w-6 rounded-sm" />
-                </div>
-                <div>
-                  <h3 className="card-title text-base">GitHub</h3>
-                  <p className="text-xs opacity-70">
-                    Personal Access Token
-                  </p>
-                </div>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2 bg-base-200/60 rounded-md shrink-0">
+                <ProviderIcon type="github" size={22} className="h-5.5 w-5.5 rounded-xs" />
               </div>
-              <button className="btn btn-sm w-full gap-2">
-                <i className="iconoir-plus text-[16px]" aria-hidden="true" />
-                Add GitHub
-              </button>
+              <div>
+                <h3 className="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">GitHub</h3>
+                <p className="text-xs text-base-content/60">
+                  Personal Access Token
+                </p>
+              </div>
             </div>
+            <button className="btn btn-sm btn-ghost border border-base-300 w-full gap-1.5 text-xs">
+              <i className="iconoir-plus text-[15px]" aria-hidden="true" />
+              Add GitHub
+            </button>
           </div>
 
           <div
-            className="card bg-base-100 shadow-lg hover:shadow-xl transition-shadow cursor-pointer border border-base-200"
+            className="border border-base-300 rounded-lg p-4 bg-base-100 hover:border-primary/50 transition-colors cursor-pointer group flex flex-col justify-between"
             onClick={() => handleOpenCreate('gitlab')}
           >
-            <div className="card-body p-6">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-base-200 rounded-lg">
-                  <ProviderIcon type="gitlab" size={24} className="h-6 w-6 rounded-sm" />
-                </div>
-                <div>
-                  <h3 className="card-title text-base">GitLab</h3>
-                  <p className="text-xs opacity-70">Server URL + Personal Access Token</p>
-                </div>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2 bg-base-200/60 rounded-md shrink-0">
+                <ProviderIcon type="gitlab" size={22} className="h-5.5 w-5.5 rounded-xs" />
               </div>
-              <button className="btn btn-sm w-full gap-2">
-                <i className="iconoir-plus text-[16px]" aria-hidden="true" />
-                Add GitLab Server
-              </button>
+              <div>
+                <h3 className="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">GitLab</h3>
+                <p className="text-xs text-base-content/60">Server URL + Personal Access Token</p>
+              </div>
             </div>
+            <button className="btn btn-sm btn-ghost border border-base-300 w-full gap-1.5 text-xs">
+              <i className="iconoir-plus text-[15px]" aria-hidden="true" />
+              Add GitLab Server
+            </button>
           </div>
         </div>
 
         {/* Credentials List */}
-        <div className="border border-base-200 rounded-lg overflow-hidden bg-base-100">
-          <div className="px-6 py-3 bg-base-200/50 border-b border-base-200">
-            <h2 className="text-sm font-bold opacity-70">Saved Credentials</h2>
+        <div className="border border-base-300 rounded-lg overflow-hidden bg-base-100">
+          <div className="px-4 py-2.5 bg-base-200/50 border-b border-base-300">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-base-content/60">Saved Credentials</h2>
           </div>
 
           {isLoading ? (

@@ -1,13 +1,25 @@
 from PIL import Image, ImageDraw, ImageChops
 import os
 import subprocess
+import numpy as np
+from scipy.ndimage import binary_dilation
 
 os.makedirs('assets', exist_ok=True)
 os.makedirs('public', exist_ok=True)
 os.makedirs('src-tauri/icons', exist_ok=True)
 
+def load_and_clean_image(path):
+    im = Image.open(path).convert('RGBA')
+    arr = np.array(im)
+    a = arr[:, :, 3]
+    solid = a >= 10
+    dilated = binary_dilation(solid, iterations=2)
+    arr[~dilated, 3] = 0
+    arr[arr[:, :, 3] < 5, 3] = 0
+    return Image.fromarray(arr)
+
 # Load source trident logo
-src = Image.open('assets/trident-logo-source.png').convert('RGBA')
+src = load_and_clean_image('assets/trident-logo-source.png')
 
 # Crop to non-transparent bounding box
 bbox = src.getbbox()
@@ -47,7 +59,7 @@ app_icon.save('assets/icon.png')
 # 2. Status bar / Tray icons
 # Pure white on transparent background for template & dark mode
 tray_src_path = 'assets/tray-icon-source.png' if os.path.exists('assets/tray-icon-source.png') else 'assets/trident-logo-source.png'
-tray_src = Image.open(tray_src_path).convert('RGBA')
+tray_src = load_and_clean_image(tray_src_path)
 tray_bbox = tray_src.getbbox()
 tray_cropped = tray_src.crop(tray_bbox)
 tray_w, tray_h = tray_cropped.size
@@ -94,6 +106,7 @@ fav.save('public/favicon.png')
 if os.path.exists('src/app'):
     app_fav = app_icon.resize((256, 256), Image.Resampling.LANCZOS)
     app_fav.save('src/app/icon.png')
+    app_fav.save('public/icon.png')
 
 app_icon.save('assets/icon.ico', format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
 

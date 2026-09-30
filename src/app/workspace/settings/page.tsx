@@ -162,14 +162,17 @@ function WorkspaceSettingsContent() {
     };
 
     return (
-        <div className="p-8 max-w-2xl mx-auto">
-            <h1 className="text-2xl font-bold mb-6">Workspace Settings</h1>
+        <div className="p-6 max-w-4xl mx-auto space-y-6">
+            <div className="pb-3 border-b border-base-300">
+                <h1 className="text-xl font-bold tracking-tight text-base-content">Workspace Settings</h1>
+                <p className="text-xs text-base-content/60 mt-0.5">Configure options and appearance for this repository</p>
+            </div>
 
-            <div className="space-y-6">
-                <div className="card bg-base-100 shadow-xl border border-base-200">
-                    <div className="card-body">
-                        <h2 className="card-title">Repository Icon</h2>
-                        <p className="text-sm opacity-70">
+            <div className="space-y-5">
+                <div className="border border-base-300 rounded-lg p-5 bg-base-100">
+                    <div>
+                        <h2 className="text-sm font-semibold text-base-content">Repository Icon</h2>
+                        <p className="text-xs text-base-content/60 mt-0.5">
                             Set an emoji to represent this repository in the sidebar and repository list.
                         </p>
 
@@ -240,20 +243,20 @@ function WorkspaceSettingsContent() {
                     </div>
                 </div>
 
-                <div className="card bg-base-100 shadow-xl border border-base-200">
-                    <div className="card-body">
-                        <h2 className="card-title">Repository Display Name</h2>
-                        <p className="text-sm opacity-70">
+                <div className="border border-base-300 rounded-lg p-5 bg-base-100">
+                    <div>
+                        <h2 className="text-sm font-semibold text-base-content">Repository Display Name</h2>
+                        <p className="text-xs text-base-content/60 mt-0.5">
                             Set a custom name for this repository in the workspace UI.
                         </p>
 
                         <div className="form-control w-full mt-4">
-                            <label className="label">
-                                <span className="label-text">Display Name</span>
+                            <label className="label pt-0 pb-1.5">
+                                <span className="label-text text-xs font-medium">Display Name</span>
                             </label>
                             <input
                                 type="text"
-                                className="input input-bordered w-full"
+                                className="input input-sm input-bordered w-full text-xs"
                                 placeholder={fallbackFolderName}
                                 value={displayNameDraft}
                                 onChange={(e) => {
@@ -270,14 +273,14 @@ function WorkspaceSettingsContent() {
                                     }
                                 }}
                             />
-                            <label className="label">
-                                <span className="label-text-alt opacity-70">
+                            <label className="label pb-0 pt-1.5">
+                                <span className="label-text-alt opacity-70 text-xs">
                                     Preview: <span className="font-medium">{previewName}</span>
                                 </span>
                             </label>
                         </div>
 
-                        <div className="flex items-center gap-2 mt-2">
+                        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-base-200">
                             <button
                                 type="button"
                                 className="btn btn-primary btn-sm"
@@ -298,19 +301,19 @@ function WorkspaceSettingsContent() {
                     </div>
                 </div>
 
-                <div className="card bg-base-100 shadow-xl border border-base-200">
-                    <div className="card-body">
-                        <h2 className="card-title">Repository Credentials</h2>
-                        <p className="text-sm opacity-70">
+                <div className="border border-base-300 rounded-lg p-5 bg-base-100">
+                    <div>
+                        <h2 className="text-sm font-semibold text-base-content">Repository Credentials</h2>
+                        <p className="text-xs text-base-content/60 mt-0.5">
                             Associate a credential with this repository to authenticate with remote servers.
                         </p>
 
                         <div className="form-control w-full mt-4">
-                            <label className="label">
-                                <span className="label-text">Associated Credential</span>
+                            <label className="label pt-0 pb-1.5">
+                                <span className="label-text text-xs font-medium">Associated Credential</span>
                             </label>
                             <select
-                                className="select select-bordered w-full"
+                                className="select select-sm select-bordered w-full text-xs"
                                 value={currentRepo.credentialId || 'none'}
                                 onChange={handleCredentialChange}
                             >
@@ -325,8 +328,8 @@ function WorkspaceSettingsContent() {
                                 ))}
                             </select>
                             {matchingCredentials.length === 0 && (
-                                <label className="label">
-                                    <span className="label-text-alt opacity-70">
+                                <label className="label pb-0 pt-1.5">
+                                    <span className="label-text-alt opacity-70 text-xs">
                                         No matching credentials found for this repository&apos;s remotes.
                                         Add credentials in the Credentials page.
                                     </span>

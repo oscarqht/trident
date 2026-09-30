@@ -503,10 +503,10 @@ export function StatusView({ repoPath, onClose }: { repoPath: string; onClose?: 
     return (
         <div className="flex flex-col h-full overflow-hidden bg-base-100">
             {/* Top Bar Header */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-base-300 bg-base-100 shrink-0">
+            <div className="h-12 flex items-center justify-between px-4 border-b border-base-300 bg-base-100 shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
                     <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm">Local Changes</span>
+                        <span className="font-semibold text-sm">Local Changes</span>
                         {files.length > 0 && (
                             <span className="badge badge-sm badge-ghost text-xs">
                                 {staged.length > 0 ? `${staged.length} staged, ${changes.length} unstaged` : `${changes.length} changes`}
@@ -547,7 +547,7 @@ export function StatusView({ repoPath, onClose }: { repoPath: string; onClose?: 
             {/* Main Split Panel Area */}
             <div className="flex-1 flex overflow-hidden min-h-0">
                 {/* Left Panel: File Trees */}
-                <div className="w-64 border-r border-base-300 flex flex-col bg-base-200/30 shrink-0">
+                <div className="w-72 border-r border-base-300 flex flex-col bg-base-200/30 shrink-0">
                     <div className="flex-1 overflow-y-auto">
                         {/* Unstaged Changes */}
                         <div className="p-2">
