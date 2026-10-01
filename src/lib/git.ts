@@ -1503,11 +1503,31 @@ export class GitService {
     // Rebase the target branch onto the current branch before merging if requested
     // This ensures a cleaner history or fast-forward merge
     if (rebaseBeforeMerge) {
-      // We must switch to the target branch to rebase it
-      await this.git.checkout(targetBranch);
-      await this.git.rebase([currentBranch]);
-      // Switch back to the branch we want to merge INTO
-      await this.git.checkout(currentBranch);
+      // If the target branch is checked out in another worktree, git refuses to check it out here,
+      // so rebase it in place inside that worktree instead.
+      const worktrees = await this.getWorktrees(currentBranch);
+      const targetWorktree = worktrees.find((wt) => !wt.isCurrent && wt.branch === targetBranch);
+
+      if (targetWorktree) {
+        const worktreeGit = getGit(targetWorktree.path);
+        try {
+          await worktreeGit.rebase([currentBranch]);
+        } catch (e) {
+          // Don't leave the other worktree stuck mid-rebase; the conflict UI only sees this one.
+          try {
+            await worktreeGit.raw(['rebase', '--abort']);
+          } catch {
+            // Nothing to abort
+          }
+          throw e;
+        }
+      } else {
+        // We must switch to the target branch to rebase it
+        await this.git.checkout(targetBranch);
+        await this.git.rebase([currentBranch]);
+        // Switch back to the branch we want to merge INTO
+        await this.git.checkout(currentBranch);
+      }
     }
 
     // Build merge arguments
