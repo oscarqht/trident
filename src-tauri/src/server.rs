@@ -264,13 +264,28 @@ fn augmented_path() -> String {
 
 enum ServerEntry {
     Standalone { app_root: PathBuf, script: PathBuf },
-    Cli { app_root: PathBuf, script: PathBuf },
+    Cli { app_root: PathBuf, script: PathBuf, force_dev: bool },
 }
 
 /// Locate the server entrypoint (standalone server.js or bin/trident-git.mjs)
 fn resolve_entry_script(app: &AppHandle) -> Result<ServerEntry, String> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let parent = cwd.parent().unwrap_or(&cwd);
+
+    // 0. Debug builds (`tauri dev`) run `next dev` from the project checkout so source edits hot-reload,
+    // instead of serving a possibly stale `.next/standalone` build.
+    if cfg!(debug_assertions) {
+        for root in [cwd.as_path(), parent] {
+            let script = root.join("bin/trident-git.mjs");
+            if script.is_file() {
+                return Ok(ServerEntry::Cli {
+                    app_root: root.to_path_buf(),
+                    script,
+                    force_dev: true,
+                });
+            }
+        }
+    }
 
     // 1. Check packaged resource directory (.next/standalone or root server.js)
     if let Ok(res_dir) = app.path().resource_dir() {
@@ -311,6 +326,7 @@ fn resolve_entry_script(app: &AppHandle) -> Result<ServerEntry, String> {
             return Ok(ServerEntry::Cli {
                 app_root: res_dir,
                 script: script_in_res,
+                force_dev: false,
             });
         }
     }
@@ -338,6 +354,7 @@ fn resolve_entry_script(app: &AppHandle) -> Result<ServerEntry, String> {
         return Ok(ServerEntry::Cli {
             app_root: cwd,
             script: script_in_cwd,
+            force_dev: false,
         });
     }
 
@@ -346,6 +363,7 @@ fn resolve_entry_script(app: &AppHandle) -> Result<ServerEntry, String> {
         return Ok(ServerEntry::Cli {
             app_root: parent.to_path_buf(),
             script: script_in_parent,
+            force_dev: false,
         });
     }
 
@@ -423,7 +441,7 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
                 .env("PATH", augmented_path())
                 .env("NODE_ENV", "production");
         }
-        ServerEntry::Cli { app_root, script } => {
+        ServerEntry::Cli { app_root, script, force_dev } => {
             println!(
                 "[trident] Using Node: {:?}, CLI Script: {:?}, Host: {}, Port: {}",
                 node_bin, script, host, port
@@ -437,9 +455,9 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
                 "-H".to_string(),
                 host.clone(),
             ];
-            let build_id = app_root.join(".next/BUILD_ID");
-            if !build_id.exists() {
-                println!("[trident] No production build found; running in dev mode");
+            let dev_mode = force_dev || !app_root.join(".next/BUILD_ID").exists();
+            if dev_mode {
+                println!("[trident] Running Next.js in dev mode");
                 args.push("--dev".to_string());
             }
             cmd.args(&args)
@@ -448,7 +466,7 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
                 .env("HOST", &host)
                 .env("HOSTNAME", &host)
                 .env("PATH", augmented_path())
-                .env("NODE_ENV", if build_id.exists() { "production" } else { "development" });
+                .env("NODE_ENV", if dev_mode { "development" } else { "production" });
         }
     }
 
