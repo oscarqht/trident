@@ -1840,14 +1840,8 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     try {
       await runGitAction({
         repoPath,
-        action: 'checkout',
-        data: { branch: rebaseSourceBranch }
-      });
-
-      await runGitAction({
-        repoPath,
         action: 'rebase',
-        data: { ontoBranch: rebaseTargetBranch, stashChanges: rebaseStashChanges }
+        data: { branch: rebaseSourceBranch, ontoBranch: rebaseTargetBranch, stashChanges: rebaseStashChanges }
       });
       closeRebaseDialog();
     } catch (e) {
@@ -1952,14 +1946,9 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     try {
       await runGitAction({
         repoPath,
-        action: 'checkout',
-        data: { branch: mergeTargetBranch }
-      });
-
-      await runGitAction({
-        repoPath,
         action: 'merge',
         data: {
+          branch: mergeTargetBranch,
           targetBranch: mergeSourceBranch,
           rebaseBeforeMerge: mergeRebaseBeforeMerge,
           squash: mergeSquash,

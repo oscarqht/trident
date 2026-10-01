@@ -587,6 +587,13 @@ export class GitService {
     }];
   }
 
+  /** Path of another worktree that has `branch` checked out, or null if none does. */
+  async getLinkedWorktreePath(branch: string): Promise<string | null> {
+    const currentBranch = (await this.git.branchLocal()).current;
+    const worktrees = await this.getWorktrees(currentBranch);
+    return worktrees.find((wt) => !wt.isCurrent && wt.branch === branch)?.path ?? null;
+  }
+
   async getBranches() {
     // 1. Get current branch (HEAD)
     let currentBranch = '';
@@ -1136,8 +1143,10 @@ export class GitService {
     if (stashChanges) {
       // Stash any local changes before rebasing
       const status = await this.git.status();
-      const hasChanges = status.files.length > 0;
-      
+      // Untracked files (e.g. a nested .worktrees/ dir) aren't stashed by `stash push`, so counting
+      // them would make the later `stash pop` fail with "No stash entries found".
+      const hasChanges = status.files.some((f) => !(f.index === '?' && f.working_dir === '?'));
+
       if (hasChanges) {
         await this.git.stash(['push', '-m', 'auto-stash before rebase']);
       }

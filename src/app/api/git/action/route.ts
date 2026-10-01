@@ -50,6 +50,44 @@ function toImageSide(buffer: Buffer | null, mimeType: string) {
   };
 }
 
+/**
+ * Runs a rebase/merge with `branch` as the branch being modified. If that branch is checked out in
+ * another worktree, the operation runs there (git refuses to check it out a second time); otherwise
+ * it is checked out in this worktree first.
+ */
+async function runOnBranch(
+  git: GitService,
+  branch: string | undefined,
+  operation: 'rebase' | 'merge',
+  run: (g: GitService) => Promise<void>
+): Promise<void> {
+  if (!branch) {
+    await run(git);
+    return;
+  }
+
+  const linkedPath = await git.getLinkedWorktreePath(branch);
+  if (!linkedPath) {
+    await git.checkout(branch);
+    await run(git);
+    return;
+  }
+
+  const linkedGit = new GitService(linkedPath);
+  try {
+    await run(linkedGit);
+  } catch (e) {
+    // The conflict resolver only sees the current worktree, so don't leave the other one mid-operation.
+    try {
+      if (operation === 'rebase') await linkedGit.abortRebase();
+      else await linkedGit.abortMerge();
+    } catch {
+      // Nothing to abort
+    }
+    throw e;
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -262,7 +300,7 @@ export async function POST(request: Request) {
         break;
       case 'rebase':
         if (!data?.ontoBranch) throw new Error('Target branch is required for rebase');
-        await git.rebase(data.ontoBranch, data.stashChanges ?? true);
+        await runOnBranch(git, data.branch, 'rebase', (g) => g.rebase(data.ontoBranch, data.stashChanges ?? true));
         break;
       case 'reword':
         if (!data?.commitHash) throw new Error('Commit hash is required for reword');
@@ -271,12 +309,12 @@ export async function POST(request: Request) {
         break;
       case 'merge':
         if (!data?.targetBranch) throw new Error('Target branch is required for merge');
-        await git.merge(data.targetBranch, {
+        await runOnBranch(git, data.branch, 'merge', (g) => g.merge(data.targetBranch, {
           rebaseBeforeMerge: data.rebaseBeforeMerge ?? false,
           squash: data.squash ?? false,
           fastForward: data.fastForward ?? false,
           squashMessage: data.squashMessage,
-        });
+        }));
         break;
       case 'check-merge-conflicts':
         if (!data?.sourceBranch) throw new Error('Source branch is required for merge conflict check');
