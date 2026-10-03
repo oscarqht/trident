@@ -13,6 +13,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "A modern, web-based Git client",
+    "longDescription": "A modern, web-based Git client.",
     "createUpdaterArtifacts": true,
     "resources": [
       "../.next/standalone"

@@ -213,12 +213,29 @@ src/
 
 The repository ships with GitHub Actions workflows for automated releases:
 
-1. On pushes to `main` (including local merge commits pushed to GitHub), `Release On Main Merge` bumps the npm minor version (`npm version minor`), creates a `v*` tag, and pushes both commit + tag.
-2. `Publish To NPM` runs on `v*` tag pushes (and also after successful release workflow completion), resolves the release tag, verifies the tagged commit is on `main`, and publishes with `npm publish --access public --provenance`.
+1. When a new release tag is pushed (`v*`), or on merge to `main`, the `Release Desktop App` workflow builds and packages native desktop bundles for:
+   - **macOS**: Apple Silicon `.dmg` & `.app.tar.gz`
+   - **Windows**: `.exe` (NSIS setup) & `.msi`
+   - **Linux**:
+     - `.AppImage` (standalone portable Linux executable)
+     - `.deb` (Debian / Ubuntu)
+     - `.pkg.tar.zst` (native Arch Linux / Omarchy Linux package)
+2. Generates the unified updater manifest `latest.json` for in-app updates across macOS, Windows, and Linux.
 
-Required secret:
+### Installing on Omarchy / Arch Linux
 
-- `NPM_TOKEN` with publish access to the `trident-git` package.
+Download `trident-<version>-1-x86_64.pkg.tar.zst` from GitHub Releases and install with `pacman`:
+
+```bash
+sudo pacman -U trident-<version>-1-x86_64.pkg.tar.zst
+```
+
+Alternatively, run the portable `.AppImage`:
+
+```bash
+chmod +x Trident_<version>_amd64.AppImage
+./Trident_<version>_amd64.AppImage
+```
 
 ## License
 

@@ -33,6 +33,8 @@
     "app:dev": "tauri dev",
     "app:build": "npm run build && tauri build",
     "app:build:mac": "npm run build && tauri build --target aarch64-apple-darwin",
+    "app:build:linux": "npm run build && tauri build",
+    "app:package:arch": "node scripts/package-arch.mjs",
     "app:setup-permissions": "bash scripts/setup-macos-permissions.sh",
     "app:sign:local": "bash scripts/sign-local.sh",
     "app:export-cert": "bash scripts/export-apple-cert.sh",

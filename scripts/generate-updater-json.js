@@ -1,6 +1,6 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { execSync } = require('node:child_process');
+import fs from 'node:fs';
+import path from 'node:path';
+import { execSync } from 'node:child_process';
 
 const args = process.argv.slice(2);
 const isDryRun = args.includes('--dry-run');
@@ -16,17 +16,40 @@ const version = tag.replace(/^v/, '');
 
 console.log(`Generating updater JSON for release ${tag} (version ${version})...`);
 
-// 1. Fetch release info and repo name
-const repo =
-  process.env.GITHUB_REPOSITORY ||
-  execSync('gh repo view --json nameWithOwner -q .nameWithOwner', {
-    encoding: 'utf8',
-  }).trim();
+let repo = process.env.GITHUB_REPOSITORY;
+if (!repo) {
+  try {
+    repo = execSync('gh repo view --json nameWithOwner -q .nameWithOwner', {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    try {
+      const remote = execSync('git remote get-url origin', {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
+      const match = remote.match(/github\.com[:/]([^/]+\/[^/.]+)/);
+      if (match) repo = match[1];
+    } catch {}
+  }
+}
+if (!repo) repo = 'oscarqht/trident';
 
-const releaseJson = execSync(`gh release view "${tag}" --json assets,body`, {
-  encoding: 'utf8',
-});
-const releaseData = JSON.parse(releaseJson);
+let releaseData = { assets: [], body: '' };
+try {
+  const releaseJson = execSync(`gh release view "${tag}" --json assets,body`, {
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'ignore'],
+  });
+  releaseData = JSON.parse(releaseJson);
+} catch (e) {
+  if (isDryRun) {
+    console.warn('[dry-run] "gh release view" unavailable, using empty asset list for simulation.');
+  } else {
+    throw e;
+  }
+}
 const assets = releaseData.assets || [];
 
 const assetNames = new Set(assets.map((a) => a.name));

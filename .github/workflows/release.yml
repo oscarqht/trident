@@ -6,6 +6,11 @@ on:
       - main
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.54.0)'
+        required: false
 
 permissions:
   contents: write
@@ -43,6 +48,12 @@ jobs:
             echo "Building for pushed tag: ${{ github.ref_name }}"
             echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.inputs.tag }}" ]; then
+            INPUT_TAG="${{ github.event.inputs.tag }}"
+            echo "Building for input tag: $INPUT_TAG"
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+            echo "version=${INPUT_TAG#v}" >> "$GITHUB_OUTPUT"
             echo "should_release=true" >> "$GITHUB_OUTPUT"
           else
             echo "Push to main detected. Bumping minor version..."
@@ -90,6 +101,10 @@ jobs:
             arch: x64
             targets: ''
             args: ''
+          - platform: ubuntu-22.04
+            arch: x86_64
+            targets: ''
+            args: ''
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
@@ -114,6 +129,20 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            zstd \
+            binutils
+
       - name: Install dependencies
         run: npm ci
 
@@ -124,7 +153,10 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY || secrets.TAURI_PRIVATE_KEY }}
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY || secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || secrets.TAURI_KEY_PASSWORD }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD || secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -137,6 +169,13 @@ jobs:
           includeUpdaterJson: false
           retryAttempts: 3
           args: ${{ matrix.args }}
+
+      - name: Build and Upload Arch Linux package (.pkg.tar.zst)
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/package-arch.mjs "${{ needs.prepare.outputs.tag }}"
 
   publish:
     name: Publish Release
