@@ -110,7 +110,7 @@ export async function POST(request: Request) {
       credentials: credentialsForClone,
     });
 
-    const addedRepo = addRepository(normalizedDestinationPath, normalizedFolderName);
+    const addedRepo = addRepository(normalizedDestinationPath);
     const repo = associatedCredentialId
       ? updateRepository(normalizedDestinationPath, { credentialId: associatedCredentialId })
       : addedRepo;

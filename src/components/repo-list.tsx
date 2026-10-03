@@ -1,5 +1,6 @@
 'use client';
 
+import { workspaceUrl } from '@/lib/workspace-url';
 import { useRepositories, useAddRepository, useDeleteRepository, useCloneRepository } from '@/hooks/use-git';
 import { useCredentials, useGitHubRepositories, type Credential } from '@/hooks/use-credentials';
 import { useState, useEffect, useMemo } from 'react';
@@ -150,9 +151,9 @@ export function RepoList() {
     const handleAdd = async (path: string) => {
         if (!path) return;
         try {
-            await addRepo.mutateAsync({ path });
+            const added = await addRepo.mutateAsync({ path });
             // Navigate to workspace page after successfully adding repository
-            router.push(`/workspace?path=${encodeURIComponent(path)}`);
+            router.push(workspaceUrl(added.name));
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             
@@ -187,10 +188,10 @@ export function RepoList() {
         if (!selectedNonRepoPath) return;
 
         try {
-            await addRepo.mutateAsync({ path: selectedNonRepoPath, initializeIfNeeded: true });
+            const added = await addRepo.mutateAsync({ path: selectedNonRepoPath, initializeIfNeeded: true });
             setInitRepoDialogOpen(false);
             setSelectedNonRepoPath(null);
-            router.push(`/workspace?path=${encodeURIComponent(selectedNonRepoPath)}`);
+            router.push(workspaceUrl(added.name));
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             toast({
@@ -274,7 +275,7 @@ export function RepoList() {
             });
             setCloneDialogOpen(false);
             setCloneFolderBrowserOpen(false);
-            router.push(`/workspace?path=${encodeURIComponent(clonedRepo.path)}`);
+            router.push(workspaceUrl(clonedRepo.name));
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             toast({
@@ -464,7 +465,7 @@ export function RepoList() {
                                 <tr
                                     key={repo.path}
                                     className="hover:bg-base-200/40 cursor-pointer transition-colors group"
-                                    onClick={() => router.push(`/workspace?path=${encodeURIComponent(repo.path)}`)}
+                                    onClick={() => router.push(workspaceUrl(repo.name))}
                                 >
                                     <td className="py-3 px-4">
                                         <div className="flex items-center gap-2.5">
@@ -487,7 +488,7 @@ export function RepoList() {
                                     <td className="py-3 px-4 text-right">
                                         <div className="flex items-center justify-end gap-1">
                                             <Link
-                                                href={`/workspace?path=${encodeURIComponent(repo.path)}`}
+                                                href={workspaceUrl(repo.name)}
                                                 className="btn btn-ghost btn-xs btn-square opacity-70 group-hover:opacity-100"
                                                 onClick={(e) => e.stopPropagation()}
                                                 title="Open in Workspace"

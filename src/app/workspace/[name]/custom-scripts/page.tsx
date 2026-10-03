@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useCurrentRepoPath } from '@/hooks/use-git';
 import { useWorkspaceTitle } from '@/hooks/use-workspace-title';
 import { useRepositories, useRepository, useUpdateRepository } from '@/hooks/use-git';
 import { RepositoryCustomScript, RepositoryCustomScriptAction, RepositoryCustomScriptTarget } from '@/lib/types';
@@ -28,8 +28,7 @@ function generateScriptId(): string {
 }
 
 function WorkspaceCustomScriptsContent() {
-  const searchParams = useSearchParams();
-  const repoPath = searchParams.get('path');
+  const repoPath = useCurrentRepoPath();
 
   useWorkspaceTitle(repoPath, 'Custom scripts');
 

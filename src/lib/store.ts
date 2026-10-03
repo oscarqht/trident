@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import { Repository, AppSettings } from './types';
 import { getAppDataDir } from './platform-utils';
+import { assertRepoNameAvailable, migrateRepoNames, repoNamesEqual, slugifyRepoName, uniqueRepoName } from './repo-name';
 
 // Store the list of known repositories in a shared app data directory.
 // This allows all instances of the app to share the same repository list.
@@ -21,7 +22,14 @@ export function getRepositories(): Repository[] {
   }
   try {
     const data = fs.readFileSync(DATA_FILE, 'utf-8');
-    return JSON.parse(data);
+    const repos: Repository[] = JSON.parse(data);
+    // Names double as URL slugs: make legacy names valid and unique once.
+    const migrated = migrateRepoNames(repos);
+    if (migrated) {
+      fs.writeFileSync(DATA_FILE, JSON.stringify(migrated, null, 2));
+      return migrated;
+    }
+    return repos;
   } catch (error) {
     console.error('Failed to parse repos.json', error);
     return [];
@@ -42,6 +50,14 @@ function normalizeIcon(icon?: string | null): string | null | undefined {
   return normalized.length > 0 ? normalized : null;
 }
 
+export function findRepositoryByName(name: string): Repository | undefined {
+  return getRepositories().find((r) => repoNamesEqual(r.name, name));
+}
+
+/**
+ * Register a repository. An explicit `name` must be valid and unique (throws RepoNameError);
+ * otherwise one is derived from the folder name and suffixed on collision.
+ */
 export function addRepository(repoPath: string, name?: string, displayName?: string | null): Repository {
   const repos = getRepositories();
   // Check if exists
@@ -49,10 +65,19 @@ export function addRepository(repoPath: string, name?: string, displayName?: str
     throw new Error('Repository already exists');
   }
 
+  const takenNames = repos.map(r => r.name);
+  let repoName: string;
+  if (name) {
+    assertRepoNameAvailable(name, takenNames);
+    repoName = name;
+  } else {
+    repoName = uniqueRepoName(slugifyRepoName(path.basename(repoPath)), takenNames);
+  }
+
   const normalizedDisplayName = normalizeDisplayName(displayName);
   const newRepo: Repository = {
     path: repoPath,
-    name: name || path.basename(repoPath),
+    name: repoName,
     ...(normalizedDisplayName ? { displayName: normalizedDisplayName } : {}),
     lastOpenedAt: new Date().toISOString(),
   };
@@ -71,6 +96,12 @@ export function updateRepository(repoPath: string, updates: Partial<Repository>)
   }
 
   const normalizedUpdates: Partial<Repository> = { ...updates };
+  if (normalizedUpdates.name !== undefined) {
+    assertRepoNameAvailable(
+      normalizedUpdates.name,
+      repos.filter((_, i) => i !== repoIndex).map(r => r.name),
+    );
+  }
   if ('displayName' in normalizedUpdates) {
     normalizedUpdates.displayName = normalizeDisplayName(normalizedUpdates.displayName);
   }

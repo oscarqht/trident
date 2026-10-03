@@ -1,27 +1,51 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
-import { HistoryView } from '@/components/git/history-view';
-import { Suspense } from 'react';
-import { useWorkspaceTitle } from '@/hooks/use-workspace-title';
+import { Suspense, useEffect, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useAddRepository, useRepositories } from '@/hooks/use-git';
+import { workspaceUrl } from '@/lib/workspace-url';
 
-function WorkspaceHistoryContent() {
+/**
+ * Legacy entry point: /workspace?path=<abs path>. Resolves (or registers) the repo
+ * and redirects to /workspace/<name>.
+ */
+function LegacyWorkspaceRedirect() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const repoPath = searchParams.get('path');
+  const { data: repositories } = useRepositories();
+  const addRepo = useAddRepository();
+  const startedRef = useRef(false);
 
-  useWorkspaceTitle(repoPath, 'History');
+  useEffect(() => {
+    if (!repoPath) {
+      router.replace('/');
+      return;
+    }
+    if (!repositories || startedRef.current) return;
+    startedRef.current = true;
 
-  if (!repoPath) {
-    return <div className="p-8">No repository path specified.</div>;
-  }
+    const existing = repositories.find((repo) => repo.path === repoPath);
+    if (existing) {
+      router.replace(workspaceUrl(existing.name));
+      return;
+    }
+    addRepo.mutateAsync({ path: repoPath })
+      .then((added) => router.replace(workspaceUrl(added.name)))
+      .catch(() => router.replace('/'));
+  }, [repoPath, repositories, router, addRepo]);
 
-  return <HistoryView repoPath={repoPath} />;
+  return (
+    <div className="flex items-center justify-center h-full">
+      <span className="loading loading-spinner"></span>
+    </div>
+  );
 }
 
 export default function WorkspacePage() {
   return (
     <Suspense fallback={<div className="flex items-center justify-center h-full"><span className="loading loading-spinner"></span></div>}>
-      <WorkspaceHistoryContent />
+      <LegacyWorkspaceRedirect />
     </Suspense>
   );
 }

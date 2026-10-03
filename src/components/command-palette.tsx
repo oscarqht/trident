@@ -6,6 +6,7 @@ import { Repository } from '@/lib/types';
 import { useRepositories } from '@/hooks/use-git';
 import { cn, getRepositoryDisplayName } from '@/lib/utils';
 import { useEscapeDismiss } from '@/hooks/use-escape-dismiss';
+import { workspaceUrl } from '@/lib/workspace-url';
 
 function sortByLastOpenedDesc(a: Repository, b: Repository) {
   return new Date(b.lastOpenedAt || 0).getTime() - new Date(a.lastOpenedAt || 0).getTime();
@@ -51,9 +52,9 @@ export function CommandPalette() {
       : Math.min(selectedIndex, filteredRepositories.length - 1);
 
   const openRepository = useCallback(
-    (repoPath: string) => {
+    (repoName: string) => {
       closePalette();
-      router.push(`/workspace?path=${encodeURIComponent(repoPath)}`);
+      router.push(workspaceUrl(repoName));
     },
     [closePalette, router]
   );
@@ -125,7 +126,7 @@ export function CommandPalette() {
                 event.preventDefault();
                 const selectedRepo = activeIndex >= 0 ? filteredRepositories[activeIndex] : null;
                 if (selectedRepo) {
-                  openRepository(selectedRepo.path);
+                  openRepository(selectedRepo.name);
                 }
               }
             }}
@@ -168,7 +169,7 @@ export function CommandPalette() {
                 isSelected ? 'bg-base-200 text-base-content' : 'hover:bg-base-200/60 text-base-content/80'
               )}
               onMouseEnter={() => setSelectedIndex(index)}
-              onClick={() => openRepository(repo.path)}
+              onClick={() => openRepository(repo.name)}
             >
               <div className="min-w-0 flex items-center gap-2.5">
                 <i className="iconoir-folder text-[15px] opacity-60 shrink-0" aria-hidden="true" />

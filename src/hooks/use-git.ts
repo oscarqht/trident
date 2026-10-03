@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { GitStatus, GitLog, Repository, AppSettings, FileDiffPayload, BranchTrackingInfo, GitError, GitWorktree, GitConflictState } from '@/lib/types';
 import { showGitErrorToast } from './use-toast';
@@ -50,6 +51,36 @@ export function useRepository(repoPath: string | null) {
   return useMemo(() => 
     repos?.find(r => r.path === repoPath) || null,
   [repos, repoPath]);
+}
+
+export function useRepositoryByName(name: string | null) {
+  const { data: repos, isLoading } = useRepositories();
+  const repo = useMemo(
+    () => (name ? repos?.find(r => r.name.toLowerCase() === name.toLowerCase()) ?? null : null),
+    [repos, name],
+  );
+  return { repo, isLoading };
+}
+
+/** Resolve the repository for the current /workspace/[name] route. */
+export function useCurrentRepo() {
+  const params = useParams<{ name?: string }>();
+  const name = params?.name ? decodeURIComponent(params.name) : null;
+  return { name, ...useRepositoryByName(name) };
+}
+
+/** Absolute path of the repository for the current /workspace/[name] route. */
+export function useCurrentRepoPath(): string | null {
+  return useCurrentRepo().repo?.path ?? null;
+}
+
+async function readErrorMessage(res: Response): Promise<string> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text).error || text;
+  } catch {
+    return text;
+  }
 }
 
 export function useAddRepository() {
@@ -114,7 +145,7 @@ export function useUpdateRepository() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path, updates }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await readErrorMessage(res));
       return res.json();
     },
     onSuccess: () => {

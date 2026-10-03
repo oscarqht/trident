@@ -1,7 +1,10 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
 import { Suspense, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { workspaceUrl } from '@/lib/workspace-url';
+import { isValidRepoName, repoNamesEqual } from '@/lib/repo-name';
+import { useCurrentRepoPath } from '@/hooks/use-git';
 import { useWorkspaceTitle } from '@/hooks/use-workspace-title';
 import { useRepositories, useUpdateRepository, useGitBranches } from '@/hooks/use-git';
 import { useCredentials } from '@/hooks/use-credentials';
@@ -24,8 +27,7 @@ function getHostname(url: string): string | null {
 }
 
 function WorkspaceSettingsContent() {
-    const searchParams = useSearchParams();
-    const repoPath = searchParams.get('path');
+    const repoPath = useCurrentRepoPath();
 
     useWorkspaceTitle(repoPath, 'Settings');
 
@@ -33,6 +35,9 @@ function WorkspaceSettingsContent() {
     const { data: credentials, isLoading: isLoadingCreds } = useCredentials();
     const { data: gitData, isLoading: isLoadingGit } = useGitBranches(repoPath);
     const updateRepo = useUpdateRepository();
+    const router = useRouter();
+    const [nameDraft, setNameDraft] = useState<string | null>(null);
+    const [nameError, setNameError] = useState<string | null>(null);
 
     const currentRepo = useMemo(() => 
         repos?.find(r => r.path === repoPath), 
@@ -104,6 +109,23 @@ function WorkspaceSettingsContent() {
     const normalizedSavedIcon = currentRepo.icon?.trim() ?? '';
     const normalizedDraftIcon = iconDraft.trim();
     const isIconDirty = normalizedDraftIcon !== normalizedSavedIcon;
+
+    const nameValue = nameDraft ?? currentRepo.name;
+    const isNameDirty = nameValue !== currentRepo.name;
+    const isNameValid = isValidRepoName(nameValue);
+    const isNameTaken = !!repos?.some(r => r.path !== currentRepo.path && repoNamesEqual(r.name, nameValue));
+
+    const handleNameSave = async () => {
+        if (!isNameValid || isNameTaken) return;
+        setNameError(null);
+        try {
+            const updated = await updateRepo.mutateAsync({ path: currentRepo.path, updates: { name: nameValue } });
+            setNameDraft(null);
+            router.replace(workspaceUrl(updated.name, '/settings'));
+        } catch (error) {
+            setNameError(error instanceof Error ? error.message : 'Failed to rename project');
+        }
+    };
 
     const handleDisplayNameSave = () => {
         setDisplayNameDraftState({
@@ -245,7 +267,64 @@ function WorkspaceSettingsContent() {
 
                 <div className="border border-base-300 rounded-lg p-5 bg-base-100">
                     <div>
-                        <h2 className="text-sm font-semibold text-base-content">Repository Display Name</h2>
+                        <h2 className="text-sm font-semibold text-base-content">Project Name</h2>
+                        <p className="text-xs text-base-content/60 mt-0.5">
+                            Unique name used in the URL (<span className="font-mono">/workspace/{nameValue || '…'}</span>). Use the same name on every machine to share links.
+                        </p>
+
+                        <div className="form-control w-full mt-4">
+                            <label className="label pt-0 pb-1.5">
+                                <span className="label-text text-xs font-medium">Name</span>
+                            </label>
+                            <input
+                                type="text"
+                                className="input input-sm input-bordered w-full text-xs font-mono"
+                                value={nameValue}
+                                onChange={(e) => {
+                                    setNameDraft(e.target.value);
+                                    setNameError(null);
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && isNameDirty && isNameValid && !isNameTaken && !updateRepo.isPending) {
+                                        e.preventDefault();
+                                        handleNameSave();
+                                    }
+                                }}
+                            />
+                            {isNameDirty && !isNameValid && (
+                                <p className="text-xs text-error mt-1.5">Only letters, numbers, &quot;.&quot;, &quot;_&quot; and &quot;-&quot; are allowed.</p>
+                            )}
+                            {isNameDirty && isNameValid && isNameTaken && (
+                                <p className="text-xs text-error mt-1.5">Another project already uses this name.</p>
+                            )}
+                            {nameError && <p className="text-xs text-error mt-1.5">{nameError}</p>}
+                        </div>
+
+                        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-base-200">
+                            <button
+                                type="button"
+                                className="btn btn-primary btn-sm gap-1.5"
+                                onClick={handleNameSave}
+                                disabled={!isNameDirty || !isNameValid || isNameTaken || updateRepo.isPending}
+                            >
+                                {updateRepo.isPending && <span className="loading loading-spinner loading-xs" />}
+                                Save Name
+                            </button>
+                            <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => { setNameDraft(null); setNameError(null); }}
+                                disabled={!isNameDirty || updateRepo.isPending}
+                            >
+                                Reset
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="border border-base-300 rounded-lg p-5 bg-base-100">
+                    <div>
+                        <h2 className="text-sm font-semibold text-base-content">Display Name</h2>
                         <p className="text-xs text-base-content/60 mt-0.5">
                             Set a custom name for this repository in the workspace UI.
                         </p>

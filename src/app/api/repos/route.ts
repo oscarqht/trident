@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { getRepositories, addRepository, updateRepository, removeRepository } from '@/lib/store';
 import { GitService } from '@/lib/git';
+import { RepoNameError } from '@/lib/repo-name';
 import { z } from 'zod';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -71,6 +72,9 @@ export async function POST(request: Request) {
      if (error instanceof z.ZodError) {
         return NextResponse.json({ error: error.issues }, { status: 400 });
      }
+    if (error instanceof RepoNameError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }
@@ -85,6 +89,9 @@ export async function PUT(request: Request) {
      if (error instanceof z.ZodError) {
         return NextResponse.json({ error: error.issues }, { status: 400 });
      }
+    if (error instanceof RepoNameError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }

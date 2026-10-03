@@ -1,10 +1,11 @@
 'use client';
 
-import { useGitLog, useGitBranches, useGitStatus, useGitAction, useRepository, useUpdateRepository, useSettings, useUpdateSettings } from '@/hooks/use-git';
+import { useCurrentRepo, useGitLog, useGitBranches, useGitStatus, useGitAction, useRepository, useUpdateRepository, useSettings, useUpdateSettings } from '@/hooks/use-git';
 import { Repository, RepositoryCustomScript, Commit } from '@/lib/types';
 import { GitGraph, GitGraphHandle } from './git-graph';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { cn, sanitizeBranchName } from '@/lib/utils';
+import { workspaceUrl } from '@/lib/workspace-url';
 import { ContextMenu, ContextMenuItem } from '@/components/context-menu';
 import { useEscapeDismiss } from '@/hooks/use-escape-dismiss';
 import { toast } from '@/hooks/use-toast';
@@ -62,6 +63,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   const updateSettings = useUpdateSettings();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const repoName = useCurrentRepo().repo?.name ?? '';
   const requestedBranchFromQuery = (searchParams.get('branch') ?? '').trim();
   const initialBranchCheckoutAttemptKeyRef = useRef<string | null>(null);
   const initialBranchHeadSelectionAttemptKeyRef = useRef<string | null>(null);
@@ -129,10 +131,8 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   const { mutateAsync: runGitAction } = useGitAction();
 
   const openConflictResolver = useCallback(() => {
-    const params = new URLSearchParams(searchParams.toString());
-    const query = params.toString();
-    router.push(query ? `/workspace/conflicts?${query}` : '/workspace/conflicts');
-  }, [router, searchParams]);
+    router.push(workspaceUrl(repoName, '/conflicts', searchParams));
+  }, [router, searchParams, repoName]);
 
   const isMergeOrRebaseConflictError = useCallback((error: unknown) => {
     if (!(error instanceof Error)) return false;
@@ -4594,7 +4594,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
 
                   <div className="pt-2 border-t border-base-200">
                     <Link
-                      href={`/workspace/custom-scripts?path=${encodeURIComponent(repoPath)}`}
+                      href={workspaceUrl(repoName, '/custom-scripts')}
                       className="w-full btn btn-ghost btn-xs justify-start gap-1.5 font-normal text-xs cursor-pointer"
                       onClick={() => setIsCustomScriptsMenuOpen(false)}
                     >

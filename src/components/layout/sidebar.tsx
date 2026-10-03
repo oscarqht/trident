@@ -7,7 +7,8 @@ import { HomeSettingsModal } from '@/components/home-settings-modal';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
-import { useGitStatus, useRepository, useUpdateSettings } from '@/hooks/use-git';
+import { useCurrentRepo, useGitStatus, useUpdateSettings } from '@/hooks/use-git';
+import { workspaceUrl } from '@/lib/workspace-url';
 
 const SIDEBAR_COLLAPSED_KEY = 'workspace-sidebar-collapsed';
 const SIDEBAR_WIDTH_EXPANDED = 240;
@@ -22,8 +23,8 @@ export function Sidebar({ className, initialCollapsed = false }: SidebarPropsWit
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const repoPath = searchParams.get('path') || '';
-  const repository = useRepository(repoPath || null);
+  const { name: routeName, repo: repository } = useCurrentRepo();
+  const repoPath = repository?.path ?? '';
   const [isCollapsed, setIsCollapsed] = useState(initialCollapsed);
   const [enableTransition, setEnableTransition] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -74,16 +75,15 @@ export function Sidebar({ className, initialCollapsed = false }: SidebarPropsWit
     } else if (!repoPath) {
       p.delete('branch');
     }
-    return `/workspace${subPath}?${p.toString()}`;
+    return workspaceUrl(repository?.name ?? routeName ?? '', subPath, p);
   };
 
+  // The sub-page is whatever follows /workspace/<name>.
+  const activeView = pathname.split('/')[3] ?? '';
+
   const isActive = (view: 'history' | 'conflicts' | 'custom-scripts' | 'settings' | 'stashes') => {
-    if (view === 'history') return pathname === '/workspace' || pathname.startsWith('/workspace/history');
-    if (view === 'conflicts') return pathname.startsWith('/workspace/conflicts');
-    if (view === 'custom-scripts') return pathname.startsWith('/workspace/custom-scripts');
-    if (view === 'settings') return pathname.startsWith('/workspace/settings');
-    if (view === 'stashes') return pathname.startsWith('/workspace/stashes');
-    return false;
+    if (view === 'history') return activeView === '' || activeView === 'history' || activeView === 'changes';
+    return activeView === view;
   };
 
   const sidebarWidth = isCollapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED;

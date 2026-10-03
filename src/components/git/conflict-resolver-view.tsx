@@ -1,9 +1,10 @@
 'use client';
 
-import { useGitAction, useGitConflictFileVersions, useGitConflictState, useGitStatus, GitConflictFileVersions } from '@/hooks/use-git';
+import { useCurrentRepo, useGitAction, useGitConflictFileVersions, useGitConflictState, useGitStatus, GitConflictFileVersions } from '@/hooks/use-git';
 import { useState, useCallback } from 'react';
 import { cn, isFileBinary } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { workspaceUrl } from '@/lib/workspace-url';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { GroupedDiffViewer } from './grouped-diff-viewer';
 import { useTheme } from 'next-themes';
@@ -113,6 +114,7 @@ function ConflictEditor({
 export function ConflictResolverView({ repoPath }: { repoPath: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const repoName = useCurrentRepo().repo?.name ?? '';
   const { data: status, isLoading: isStatusLoading, isError: isStatusError, error: statusError, refetch: refetchStatus } = useGitStatus(repoPath);
   const {
     data: conflictState,
@@ -148,10 +150,8 @@ export function ConflictResolverView({ repoPath }: { repoPath: string }) {
   const operation = conflictState?.operation ?? null;
 
   const buildWorkspaceHref = useCallback((subPath: string = '') => {
-    const params = new URLSearchParams(searchParams.toString());
-    const query = params.toString();
-    return query ? `/workspace${subPath}?${query}` : `/workspace${subPath}`;
-  }, [searchParams]);
+    return workspaceUrl(repoName, subPath, searchParams);
+  }, [repoName, searchParams]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([refetchStatus(), refetchConflictState(), refetchVersions()]);

@@ -1,7 +1,7 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
 import { Suspense, useState, useEffect } from 'react';
+import { useCurrentRepoPath } from '@/hooks/use-git';
 import { useWorkspaceTitle } from '@/hooks/use-workspace-title';
 import { useGitStashes, useGitAction, useStashFiles, useStashFileDiff } from '@/hooks/use-git';
 import { cn, getChangedLineCountFromDiff, isFileBinary, isImageFile } from '@/lib/utils';
@@ -129,8 +129,7 @@ function StashDiffView({ repoPath, stashIndex, filePath }: { repoPath: string; s
 }
 
 function StashesContent() {
-    const searchParams = useSearchParams();
-    const repoPath = searchParams.get('path');
+    const repoPath = useCurrentRepoPath();
     const { data: stashes, isLoading, isError, error, refetch } = useGitStashes(repoPath);
     const action = useGitAction();
     const [selectedStashIndex, setSelectedStashIndex] = useState<number | null>(null);

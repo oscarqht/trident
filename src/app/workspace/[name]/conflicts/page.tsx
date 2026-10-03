@@ -1,13 +1,12 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
+import { useCurrentRepoPath } from '@/hooks/use-git';
 import { useWorkspaceTitle } from '@/hooks/use-workspace-title';
 import { ConflictResolverView } from '@/components/git/conflict-resolver-view';
 
 function WorkspaceConflictsContent() {
-  const searchParams = useSearchParams();
-  const repoPath = searchParams.get('path');
+  const repoPath = useCurrentRepoPath();
 
   useWorkspaceTitle(repoPath, 'Conflicts');
 
