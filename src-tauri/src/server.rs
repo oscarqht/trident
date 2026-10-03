@@ -130,6 +130,11 @@ pub fn discover_node_binary() -> Option<PathBuf> {
             return Some(asdf_node);
         }
 
+        let mise_node = home.join(".local/share/mise/shims/node");
+        if mise_node.is_file() {
+            return Some(mise_node);
+        }
+
         // Check NVM versions
         let nvm_versions = home.join(".nvm/versions/node");
         if nvm_versions.is_dir() {
@@ -213,6 +218,7 @@ fn augmented_path() -> String {
         candidate_paths.push(home.join(".volta/bin"));
         candidate_paths.push(home.join(".asdf/shims"));
         candidate_paths.push(home.join(".asdf/bin"));
+        candidate_paths.push(home.join(".local/share/mise/shims"));
 
         // Check NVM node versions
         let nvm_versions = home.join(".nvm/versions/node");

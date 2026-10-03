@@ -1,6 +1,8 @@
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, Wry};
+use tauri::AppHandle;
+#[cfg(target_os = "macos")]
+use tauri::{Manager, Wry};
 use tauri_plugin_autostart::ManagerExt;
 
 #[cfg(target_os = "macos")]

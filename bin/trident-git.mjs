@@ -49,6 +49,7 @@ const DEFAULT_PORT = 3100;
         path.join(homeDir, ".volta", "bin"),
         path.join(homeDir, ".asdf", "shims"),
         path.join(homeDir, ".asdf", "bin"),
+        path.join(homeDir, ".local", "share", "mise", "shims"),
         "/opt/homebrew/bin",
         "/opt/homebrew/sbin",
         "/usr/local/bin",

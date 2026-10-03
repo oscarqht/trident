@@ -296,6 +296,7 @@ pub async fn handle_check_updates_click(app: &AppHandle) {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub async fn handle_app_reopen(app: &AppHandle) {
     let is_downloaded = {
         let state = app.state::<UpdateState>();

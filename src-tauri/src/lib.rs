@@ -170,11 +170,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|app_handle, event| {
+    app.run(|_app_handle, event| {
         match event {
             #[cfg(target_os = "macos")]
             RunEvent::Reopen { .. } => {
-                let handle = app_handle.clone();
+                let handle = _app_handle.clone();
                 tauri::async_runtime::spawn(async move {
                     updater::handle_app_reopen(&handle).await;
                 });
