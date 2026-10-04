@@ -218,6 +218,9 @@ export class GitService {
     // Custom format to ensure we get parents and refs correctly
     const log = await this.git.log({
       '--all': null,
+      // Default date ordering can list a parent before its children when commit
+      // timestamps are skewed (e.g. CI bot in UTC), which makes the graph fork lanes.
+      '--topo-order': null,
       // Keep refs stable regardless of user-level git config (e.g. log.decorate=full).
       '--decorate': 'short',
       '--max-count': limit,
