@@ -332,11 +332,17 @@ export const GitGraph = forwardRef<GitGraphHandle, {
                             const processRefs = () => {
                                 if (!node.refs || isLocalChanges) return [];
 
-                                const rawRefs = node.refs.replace(/^\s*\((.*)\)\s*$/, '$1').split(',').map(r => {
-                                    const isHead = r.startsWith('HEAD -> ');
-                                    const name = normalizeDecoratedRef(r.replace(/^HEAD\s*->\s*/, '').trim());
-                                    return { raw: r, name, isHead };
-                                });
+                                const rawRefs = node.refs
+                                    .replace(/^\s*\((.*)\)\s*$/, '$1')
+                                    .split(',')
+                                    .map(r => r.trim())
+                                    .filter(Boolean)
+                                    .filter(r => !/\/HEAD$/.test(r))
+                                    .map(r => {
+                                        const isHead = r.startsWith('HEAD -> ');
+                                        const name = normalizeDecoratedRef(r.replace(/^HEAD\s*->\s*/, '').trim());
+                                        return { raw: r, name, isHead };
+                                    });
 
                                 const result: {
                                     displayName: string;
@@ -392,10 +398,11 @@ export const GitGraph = forwardRef<GitGraphHandle, {
                                         // Skip hidden branches
                                         if (isHidden(ref.name)) return;
 
+                                        const isDetachedHead = ref.name === 'HEAD';
                                         result.push({
-                                            displayName: getRefDisplayName(ref.name),
+                                            displayName: isDetachedHead ? 'HEAD (detached)' : getRefDisplayName(ref.name),
                                             primaryRef: ref.name,
-                                            isHead: ref.isHead
+                                            isHead: ref.isHead || isDetachedHead
                                         });
                                     }
                                 });
@@ -430,8 +437,11 @@ export const GitGraph = forwardRef<GitGraphHandle, {
                                                     tag.isHead && tag.primaryRef === currentBranch
                                                 );
                                                 const isGitTag = tag.primaryRef.startsWith('tag:');
+                                                const isDetachedHead = tag.primaryRef === 'HEAD';
                                                 const tagColors = isGitTag
                                                     ? { textColor: '#374151', backgroundColor: '#e5e7eb' }
+                                                    : isDetachedHead
+                                                    ? { textColor: '#b45309', backgroundColor: '#fef3c7' }
                                                     : getBranchTagColors(tag.primaryRef);
 
                                                 const tagElement = (

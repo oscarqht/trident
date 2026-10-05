@@ -70,9 +70,9 @@ export function Sidebar({ className, initialCollapsed = false }: SidebarPropsWit
   const getHref = (subPath: string = '') => {
     const p = new URLSearchParams(searchParams.toString());
     p.delete('tab');
-    if (repoPath && currentBranch) {
+    if (repoPath && currentBranch && currentBranch !== 'HEAD') {
       p.set('branch', currentBranch);
-    } else if (!repoPath) {
+    } else {
       p.delete('branch');
     }
     return workspaceUrl(repository?.name ?? routeName ?? '', subPath, p);
