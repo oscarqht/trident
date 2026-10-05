@@ -600,8 +600,18 @@ export class GitService {
   async getBranches() {
     // 1. Get current branch (HEAD)
     let currentBranch = '';
+    let isDetached = false;
+    let detachedHeadCommit = '';
     try {
       currentBranch = (await this.git.revparse(['--abbrev-ref', 'HEAD'])).trim();
+      if (currentBranch === 'HEAD') {
+        isDetached = true;
+        try {
+          detachedHeadCommit = (await this.git.revparse(['--short', 'HEAD'])).trim();
+        } catch {
+          // Ignore revparse error if HEAD commit is missing
+        }
+      }
     } catch (e) {
       console.warn('Failed to get current branch:', e);
     }
@@ -692,6 +702,8 @@ export class GitService {
     return {
       branches,
       current: currentBranch,
+      isDetached,
+      detachedHeadCommit,
       branchCommits,
       remotes, // { "origin": ["main", "feature"], "upstream": ["main"] }
       remoteUrls,
@@ -704,6 +716,36 @@ export class GitService {
     branch: string,
     options: { switchStrategy?: 'stash-and-reapply' | 'discard' } = {}
   ): Promise<void> {
+    const trimmedBranch = branch.trim();
+
+    // Prevent unintentional detached HEAD by redirecting remote tracking branches to local branches
+    const branchSummary = await this.git.branchLocal();
+    if (!branchSummary.all.includes(trimmedBranch)) {
+      if (trimmedBranch.startsWith('remotes/')) {
+        const withoutRemotesPrefix = trimmedBranch.replace(/^remotes\//, '');
+        const slashIndex = withoutRemotesPrefix.indexOf('/');
+        if (slashIndex > 0) {
+          const localBranch = withoutRemotesPrefix.slice(slashIndex + 1);
+          if (branchSummary.all.includes(localBranch)) {
+            return this.checkout(localBranch, options);
+          } else {
+            return this.checkoutRemoteToLocal(trimmedBranch, localBranch, options);
+          }
+        }
+      }
+
+      const remotes = await this.git.getRemotes();
+      const matchingRemote = remotes.find((r) => trimmedBranch.startsWith(`${r.name}/`));
+      if (matchingRemote) {
+        const localBranch = trimmedBranch.slice(matchingRemote.name.length + 1);
+        if (branchSummary.all.includes(localBranch)) {
+          return this.checkout(localBranch, options);
+        } else {
+          return this.checkoutRemoteToLocal(`remotes/${trimmedBranch}`, localBranch, options);
+        }
+      }
+    }
+
     const { switchStrategy } = options;
 
     if (switchStrategy === 'stash-and-reapply') {
@@ -1536,7 +1578,21 @@ export class GitService {
       } else {
         // We must switch to the target branch to rebase it
         await this.git.checkout(targetBranch);
-        await this.git.rebase([currentBranch]);
+        try {
+          await this.git.rebase([currentBranch]);
+        } catch (e) {
+          try {
+            await this.git.raw(['rebase', '--abort']);
+          } catch {
+            // Nothing to abort
+          }
+          try {
+            await this.git.checkout(currentBranch);
+          } catch {
+            // Ignore
+          }
+          throw e;
+        }
         // Switch back to the branch we want to merge INTO
         await this.git.checkout(currentBranch);
       }

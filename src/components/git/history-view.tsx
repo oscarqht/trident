@@ -155,6 +155,14 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   useEffect(() => {
     if (!requestedBranchFromQuery || !branchData) return;
 
+    if (requestedBranchFromQuery === 'HEAD') {
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.delete('branch');
+      const nextQuery = nextParams.toString();
+      router.replace(nextQuery ? `?${nextQuery}` : window.location.pathname, { scroll: false });
+      return;
+    }
+
     const requestKey = `${repoPath}:${requestedBranchFromQuery}`;
     if (initialBranchCheckoutAttemptKeyRef.current === requestKey) return;
 
@@ -2325,14 +2333,20 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   }
 
   const confirmCheckoutToLocal = (remoteBranch: string) => {
-    setCheckoutRemoteBranch(remoteBranch);
     // Extract the branch name from remotes/origin/branch-name
     const parts = remoteBranch.split('/');
     // Skip 'remotes' and remote name (e.g., 'origin'), take the rest as branch name
     const branchName = parts.slice(2).join('/');
+
+    if (branchName && branchData?.branches?.includes(branchName)) {
+      void handleCheckout(branchName);
+      return;
+    }
+
+    setCheckoutRemoteBranch(remoteBranch);
     setCheckoutLocalBranchName(branchName);
     setIsCheckoutToLocalOpen(true);
-  }
+  };
 
   const targetBranchDisplayName = useMemo(() => {
     if (!pendingBranchSwitch) return '';
@@ -2469,6 +2483,11 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
 
   const handleCheckout = async (branchName: string) => {
     if (branchName === currentBranch) return;
+
+    if (branchName.startsWith('remotes/')) {
+      confirmCheckoutToLocal(branchName);
+      return;
+    }
 
     if (hasLocalChanges) {
       setPendingBranchSwitch({ type: 'local', branch: branchName });
@@ -2790,19 +2809,23 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     return trackingInfoByBranch?.[branchToRename] ?? null;
   }, [branchToRename, remoteBranchToRename, trackingInfoByBranch]);
   const localChangesCount = statusData?.files?.length;
-  const currentBranchName = currentBranch || (isBranchesLoading ? 'Loading branches...' : 'Detached HEAD');
-  const currentBranchLabel = currentBranch && typeof localChangesCount === 'number' && localChangesCount > 0
+  const isDetached = Boolean(branchData?.isDetached || currentBranch === 'HEAD' || (!currentBranch && !isBranchesLoading));
+  const detachedCommit = branchData?.detachedHeadCommit || (selectedHash ? selectedHash.slice(0, 7) : '');
+  const currentBranchName = isDetached
+    ? (detachedCommit ? `Detached HEAD (${detachedCommit})` : 'Detached HEAD')
+    : (currentBranch || (isBranchesLoading ? 'Loading branches...' : 'Detached HEAD'));
+  const currentBranchLabel = !isDetached && currentBranch && typeof localChangesCount === 'number' && localChangesCount > 0
     ? `${currentBranch} (${localChangesCount})`
     : currentBranchName;
   const currentTrackingBranch = useMemo(() => {
-    if (!currentBranch) return null;
+    if (!currentBranch || isDetached) return null;
     const tracking = trackingInfoByBranch?.[currentBranch];
     if (!tracking?.upstream) return null;
     const parsed = parseTrackingUpstream(tracking.upstream);
     if (!parsed) return null;
 
     return { upstream: tracking.upstream, ...parsed };
-  }, [currentBranch, trackingInfoByBranch]);
+  }, [currentBranch, isDetached, trackingInfoByBranch]);
   const pullAllTargets = useMemo(() => {
     const targets: Array<{ localBranch: string; remote: string; remoteBranch: string }> = [];
     for (const localBranch of branchData?.branches ?? []) {
@@ -2820,10 +2843,11 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   }, [branchData?.branches, trackingInfoByBranch]);
   const pullActionDisabledReason = useMemo(() => {
     if (isBranchesLoading) return 'Loading branches...';
+    if (isDetached) return 'Cannot pull in detached HEAD state';
     if (!currentBranch) return 'Not on a local branch';
     if (!currentTrackingBranch) return `Branch "${currentBranch}" has no tracking remote branch`;
     return null;
-  }, [currentBranch, currentTrackingBranch, isBranchesLoading]);
+  }, [currentBranch, currentTrackingBranch, isBranchesLoading, isDetached]);
   const pullAllActionDisabledReason = useMemo(() => {
     if (isBranchesLoading) return 'Loading branches...';
     if (pullAllTargets.length === 0) return 'No local branches with tracking remote branches';
@@ -2831,9 +2855,10 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   }, [isBranchesLoading, pullAllTargets.length]);
   const pushActionDisabledReason = useMemo(() => {
     if (isBranchesLoading) return 'Loading branches...';
+    if (isDetached) return 'Cannot push in detached HEAD state';
     if (!currentBranch) return 'Not on a local branch';
     return null;
-  }, [currentBranch, isBranchesLoading]);
+  }, [currentBranch, isBranchesLoading, isDetached]);
 
   const confirmPullCurrentBranch = () => {
     if (!currentBranch || pullActionDisabledReason) return;
@@ -4462,11 +4487,15 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
             <h1 className="font-semibold text-base tracking-tight shrink-0">History</h1>
             <div className="relative" ref={branchPopoverRef}>
               <button
-                className="btn btn-sm btn-ghost border border-base-300 gap-1.5 max-w-[20rem] header-icon-btn text-xs font-medium"
+                className={cn(
+                  "btn btn-sm btn-ghost border gap-1.5 max-w-[20rem] header-icon-btn text-xs font-medium",
+                  isDetached ? "border-warning/60 text-warning" : "border-base-300"
+                )}
                 onClick={() => setIsBranchPopoverOpen(prev => !prev)}
-                title={currentBranchLabel}
+                title={isDetached ? `${currentBranchLabel} - Click to switch branches` : currentBranchLabel}
                 aria-label={currentBranchLabel}
               >
+                {isDetached && <i className="iconoir-warning-triangle text-[13px] text-warning shrink-0" aria-hidden="true" />}
                 <span className="truncate branch-selector-label">{currentBranchLabel}</span>
                 <i className={cn("iconoir-nav-arrow-down text-[14px] shrink-0 transition-transform", isBranchPopoverOpen && "rotate-180")} aria-hidden="true" />
               </button>

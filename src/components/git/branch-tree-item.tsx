@@ -203,7 +203,14 @@ export function BranchTreeItem({
                 <div 
                   className="flex items-center gap-2 flex-1 min-w-0" 
                   onClick={(e) => onBranchClick?.(child.fullPath!, { isMultiSelect: e.metaKey || e.ctrlKey, isRangeSelect: e.shiftKey })}
-                  onDoubleClick={() => !isCurrent && onCheckout(child.fullPath!)}
+                  onDoubleClick={() => {
+                    if (isCurrent) return;
+                    if (isRemote || child.fullPath?.startsWith('remotes/')) {
+                      onCheckoutToLocal(child.fullPath!);
+                    } else {
+                      onCheckout(child.fullPath!);
+                    }
+                  }}
                 >
                   {isCurrent ? (
                     <span className="w-3 h-3 flex items-center justify-center shrink-0">

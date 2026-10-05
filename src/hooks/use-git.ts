@@ -312,6 +312,8 @@ export function useGitBranches(repoPath: string | null) {
   return useQuery<{ 
     branches: string[], 
     current: string, 
+    isDetached?: boolean,
+    detachedHeadCommit?: string,
     branchCommits: Record<string, string>, 
     remotes: Record<string, string[]>,
     remoteUrls: Record<string, string>,

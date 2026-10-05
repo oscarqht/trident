@@ -514,7 +514,13 @@ export function StatusView({ repoPath, onClose }: { repoPath: string; onClose?: 
                         )}
                         {branches?.current && (
                             <span className="text-xs opacity-60 truncate">
-                                on <span className="font-mono font-semibold">{branches.current}</span>
+                                {branches.current === 'HEAD' || branches.isDetached ? (
+                                    <span className="text-warning font-semibold">
+                                        detached at {branches.detachedHeadCommit || 'HEAD'}
+                                    </span>
+                                ) : (
+                                    <>on <span className="font-mono font-semibold">{branches.current}</span></>
+                                )}
                             </span>
                         )}
                     </div>

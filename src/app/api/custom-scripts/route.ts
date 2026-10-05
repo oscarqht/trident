@@ -241,11 +241,25 @@ export async function POST(request: Request) {
 
     const git = new GitService(repoPath);
     const branches = await git.getBranches();
-    const checkoutBranch = normalizeBranchForCheckout(branchRef);
     const currentBranch = branches.current;
 
-    if (!currentBranch || currentBranch !== checkoutBranch) {
-      await git.checkout(checkoutBranch);
+    let checkoutBranch = branchRef;
+    if (branchRef.startsWith('remotes/')) {
+      const parts = branchRef.split('/');
+      const localName = parts.slice(2).join('/');
+      checkoutBranch = localName;
+      if (branches.branches.includes(localName)) {
+        if (currentBranch !== localName) {
+          await git.checkout(localName);
+        }
+      } else {
+        await git.checkoutRemoteToLocal(branchRef, localName);
+      }
+    } else {
+      checkoutBranch = normalizeBranchForCheckout(branchRef);
+      if (!currentBranch || currentBranch !== checkoutBranch) {
+        await git.checkout(checkoutBranch);
+      }
     }
 
     const executionId = crypto.randomUUID();
