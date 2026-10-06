@@ -2,6 +2,7 @@ import { simpleGit, SimpleGit, SimpleGitOptions } from 'simple-git';
 import { GitStatus, GitLog, GitWorktree, GitConflictState } from './types';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { realpathSync } from 'node:fs';
 import { mkdtemp, unlink, access, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -550,11 +551,20 @@ export class GitService {
       worktrees.push(currentEntry);
     }
 
-    const normalizedRepoPath = resolve(this.repoPath);
+    const normalizePath = (p: string) => {
+      const resolved = resolve(p);
+      try {
+        return realpathSync(resolved);
+      } catch {
+        return resolved;
+      }
+    };
+
+    const normalizedRepoPath = normalizePath(this.repoPath);
     const uniqueByPath = new Map<string, GitWorktree>();
     for (let i = 0; i < worktrees.length; i++) {
       const entry = worktrees[i];
-      const normalizedPath = resolve(entry.path);
+      const normalizedPath = normalizePath(entry.path);
       if (uniqueByPath.has(normalizedPath)) continue;
       uniqueByPath.set(normalizedPath, {
         path: entry.path,
@@ -1225,11 +1235,19 @@ export class GitService {
     const branchSummary = await this.git.branchLocal();
     const currentBranch = branchSummary.current;
     const targetBranch = branch || currentBranch;
+
+    const linkedPath = await this.getLinkedWorktreePath(targetBranch);
+    if (linkedPath) {
+      console.log(`[reword] Branch "${targetBranch}" is checked out in linked worktree "${linkedPath}". Running reword there.`);
+      const linkedGit = new GitService(linkedPath);
+      return linkedGit.reword(commitHash, newMessage, targetBranch);
+    }
+
     const needsCheckout = targetBranch !== currentBranch;
 
     // Check if we have uncommitted changes
     const status = await this.git.status();
-    const hasChanges = status.files.length > 0;
+    const hasChanges = status.files.some((f) => !(f.index === '?' && f.working_dir === '?'));
 
     if (hasChanges) {
       // Stash changes before checkout
@@ -1676,11 +1694,33 @@ export class GitService {
     remoteBranch: string,
     options: {
       rebase?: boolean;
+      isLinkedWorktree?: boolean;
     } = {}
   ): Promise<void> {
-    const { rebase = true } = options;
+    const { rebase = true, isLinkedWorktree = false } = options;
     
     console.log('[pullFromRemote] Starting pull:', { localBranch, remote, remoteBranch, options });
+
+    // If this branch is checked out in another worktree, run the pull in that worktree instead
+    // because git will refuse to check out the branch in this worktree.
+    const linkedPath = await this.getLinkedWorktreePath(localBranch);
+    if (linkedPath) {
+      console.log(`[pullFromRemote] Branch "${localBranch}" is checked out in linked worktree "${linkedPath}". Running pull there.`);
+      const linkedGit = new GitService(linkedPath);
+      try {
+        await linkedGit.pullFromRemote(localBranch, remote, remoteBranch, {
+          ...options,
+          isLinkedWorktree: true,
+        });
+      } finally {
+        try {
+          await this.git.fetch(remote);
+        } catch (e) {
+          console.warn('[pullFromRemote] Failed to refresh refs in current repo after linked worktree pull:', e);
+        }
+      }
+      return;
+    }
     
     // Get current branch to see if we need to checkout
     const branchSummary = await this.git.branchLocal();
@@ -1702,9 +1742,9 @@ export class GitService {
       throw new Error(`Remote branch '${remoteFull}' does not exist`);
     }
     
-    // Check if we have uncommitted changes
+    // Check if we have uncommitted changes (excluding untracked files which stash push skips)
     const status = await this.git.status();
-    const hasChanges = status.files.length > 0;
+    const hasChanges = status.files.some((f) => !(f.index === '?' && f.working_dir === '?'));
     console.log('[pullFromRemote] Has uncommitted changes:', hasChanges);
     
     if (hasChanges) {
@@ -1759,14 +1799,15 @@ export class GitService {
       
       // If we are in a conflicted state, we DON'T checkout back to the initial branch
       // as the user needs to resolve conflicts on the localBranch.
-      // However, we should still try to inform them.
+      // However, if this was run in a linked worktree, the UI cannot resolve conflicts there,
+      // so we must abort and restore the linked worktree to its clean state.
 
       const isConflict = (e as any).message?.toLowerCase().includes('conflict') || 
                         (e as any).stdout?.toLowerCase().includes('conflict') ||
                         (e as any).stderr?.toLowerCase().includes('conflict');
 
-      if (!isConflict) {
-        // If it wasn't a conflict, try to abort and return to initial state
+      if (isLinkedWorktree || !isConflict) {
+        // If it's a linked worktree or not a conflict, try to abort and return to initial state
         try {
           if (rebase) {
             await this.git.rebase(['--abort']);
@@ -1793,7 +1834,7 @@ export class GitService {
           }
         }
       } else {
-        // It IS a conflict. We stay on localBranch.
+        // It IS a conflict on the current worktree. We stay on localBranch.
         // We cannot pop the stash here because it will definitely conflict further or fail.
       }
       
@@ -1954,9 +1995,10 @@ export class GitService {
       squash?: boolean;
       squashMessage?: string;
       credentials?: { username: string; token: string };
+      isLinkedWorktree?: boolean;
     } = {}
   ): Promise<void> {
-    const { rebaseFirst, forcePush, pushLocalOnlyTags, setUpstream, squash, squashMessage, credentials } = options;
+    const { rebaseFirst, forcePush, pushLocalOnlyTags, setUpstream, squash, squashMessage, credentials, isLinkedWorktree = false } = options;
     
     // Mask token for logging
     const logOptions = { ...options };
@@ -1965,7 +2007,18 @@ export class GitService {
     }
     
     console.log('[pushToRemote] Starting push:', { localBranch, remote, remoteBranch, options: logOptions });
-    
+
+    // If this branch is checked out in another worktree, run push in that worktree
+    const linkedPath = await this.getLinkedWorktreePath(localBranch);
+    if (linkedPath) {
+      console.log(`[pushToRemote] Branch "${localBranch}" is checked out in linked worktree "${linkedPath}". Running push there.`);
+      const linkedGit = new GitService(linkedPath);
+      return linkedGit.pushToRemote(localBranch, remote, remoteBranch, {
+        ...options,
+        isLinkedWorktree: true,
+      });
+    }
+
     // Get current branch to see if we need to checkout
     const branchSummary = await this.git.branchLocal();
     const initialBranch = branchSummary.current;
@@ -1973,7 +2026,7 @@ export class GitService {
 
     // Check if we have uncommitted changes
     const status = await this.git.status();
-    const hasChanges = status.files.length > 0;
+    const hasChanges = status.files.some((f) => !(f.index === '?' && f.working_dir === '?'));
     console.log('[pushToRemote] Has uncommitted changes:', hasChanges);
     
     if (hasChanges) {
@@ -2159,7 +2212,15 @@ export class GitService {
                         (e as any).stdout?.toLowerCase().includes('conflict') ||
                         (e as any).stderr?.toLowerCase().includes('conflict');
 
-      if (!isConflict) {
+      if (isLinkedWorktree || !isConflict) {
+        if (rebaseFirst) {
+          try {
+            await this.git.raw(['rebase', '--abort']);
+          } catch {
+            // Ignore
+          }
+        }
+
         if (needsCheckout) {
           try {
             await this.git.checkout(initialBranch);
