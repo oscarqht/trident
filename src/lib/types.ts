@@ -30,6 +30,7 @@ export interface GitWorktree {
   head: string | null;
   isCurrent: boolean;
   isMain?: boolean;
+  lastModified?: number;
 }
 
 export interface AppSettings {

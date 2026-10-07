@@ -3,7 +3,7 @@ import { GitStatus, GitLog, GitWorktree, GitConflictState } from './types';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { realpathSync } from 'node:fs';
-import { mkdtemp, unlink, access, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, unlink, access, readFile, writeFile, stat } from 'node:fs/promises';
 import { join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { getAugmentedEnv } from './platform-utils';
@@ -575,9 +575,105 @@ export class GitService {
       });
     }
 
-    return Array.from(uniqueByPath.values()).sort((a, b) => {
+    return Array.from(uniqueByPath.values());
+  }
+
+  private async populateWorktreeTimestampsAndSort(worktrees: GitWorktree[]): Promise<void> {
+    // 1. Fetch filesystem mtimes for each worktree directory and its .git
+    const mtimes = new Map<string, number>();
+    await Promise.all(
+      worktrees.map(async (wt) => {
+        let maxMtime = 0;
+        try {
+          const s = await stat(wt.path);
+          maxMtime = Math.max(maxMtime, Math.round(s.mtimeMs));
+        } catch {
+          // Path might not exist or be inaccessible
+        }
+        try {
+          const gitStat = await stat(join(wt.path, '.git'));
+          maxMtime = Math.max(maxMtime, Math.round(gitStat.mtimeMs));
+        } catch {
+          // Ignore if .git cannot be stated
+        }
+        if (maxMtime > 0) {
+          mtimes.set(wt.path, maxMtime);
+        }
+      })
+    );
+
+    // 2. Fetch commit timestamps for worktree HEADs
+    const heads = Array.from(new Set(worktrees.map((wt) => wt.head).filter((h): h is string => Boolean(h))));
+    const commitTimes = new Map<string, number>();
+
+    if (heads.length > 0) {
+      try {
+        const rawShow = await this.git.raw(['show', '-s', '--format=%H %ct', ...heads]);
+        for (const line of rawShow.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const [hash, timestampStr] = trimmed.split(' ');
+          if (hash && timestampStr) {
+            const ts = parseInt(timestampStr, 10);
+            if (!Number.isNaN(ts)) {
+              commitTimes.set(hash, ts * 1000);
+            }
+          }
+        }
+      } catch {
+        // Fallback to querying each head individually if batch call fails
+        await Promise.allSettled(
+          heads.map(async (head) => {
+            try {
+              const output = await this.git.raw(['show', '-s', '--format=%H %ct', head]);
+              const [hash, timestampStr] = output.trim().split(' ');
+              if (hash && timestampStr) {
+                const ts = parseInt(timestampStr, 10);
+                if (!Number.isNaN(ts)) {
+                  commitTimes.set(hash, ts * 1000);
+                }
+              }
+            } catch {
+              // ignore individual failure
+            }
+          })
+        );
+      }
+    }
+
+    // 3. Assign lastModified = Math.max(commitTime, mtime)
+    for (const wt of worktrees) {
+      let commitTime = 0;
+      if (wt.head) {
+        if (commitTimes.has(wt.head)) {
+          commitTime = commitTimes.get(wt.head)!;
+        } else {
+          for (const [hash, time] of commitTimes.entries()) {
+            if (hash.startsWith(wt.head) || wt.head.startsWith(hash)) {
+              commitTime = time;
+              break;
+            }
+          }
+        }
+      }
+      const mtime = mtimes.get(wt.path) ?? 0;
+      const lastModified = Math.max(commitTime, mtime);
+      if (lastModified > 0) {
+        wt.lastModified = lastModified;
+      }
+    }
+
+    // 4. Sort: isCurrent pinned at top, then lastModified DESC, fallback alphabetical by path
+    worktrees.sort((a, b) => {
       if (a.isCurrent && !b.isCurrent) return -1;
       if (!a.isCurrent && b.isCurrent) return 1;
+
+      const aTime = a.lastModified ?? 0;
+      const bTime = b.lastModified ?? 0;
+      if (aTime !== bTime) {
+        return bTime - aTime;
+      }
+
       return a.path.localeCompare(b.path);
     });
   }
@@ -586,9 +682,20 @@ export class GitService {
     try {
       const rawOutput = await this.git.raw(['worktree', 'list', '--porcelain']);
       const parsed = this.parseWorktreeEntries(rawOutput);
-      if (parsed.length > 0) return parsed;
+      if (parsed.length > 0) {
+        await this.populateWorktreeTimestampsAndSort(parsed);
+        return parsed;
+      }
     } catch (error) {
       console.warn('Failed to list git worktrees:', error);
+    }
+
+    let repoMtime: number | undefined;
+    try {
+      const s = await stat(this.repoPath);
+      repoMtime = Math.round(s.mtimeMs);
+    } catch {
+      // ignore
     }
 
     return [{
@@ -597,6 +704,7 @@ export class GitService {
       head: null,
       isCurrent: true,
       isMain: true,
+      lastModified: repoMtime,
     }];
   }
 
