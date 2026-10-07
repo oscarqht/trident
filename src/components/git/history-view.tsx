@@ -1,6 +1,6 @@
 'use client';
 
-import { useCurrentRepo, useGitLog, useGitBranches, useGitStatus, useGitAction, useRepository, useUpdateRepository, useSettings, useUpdateSettings } from '@/hooks/use-git';
+import { useCurrentRepo, useGitLog, useGitBranches, useGitStatus, useGitAction, useRepository, useRepositories, useUpdateRepository, useSettings, useUpdateSettings } from '@/hooks/use-git';
 import { Repository, RepositoryCustomScript, Commit } from '@/lib/types';
 import { GitGraph, GitGraphHandle } from './git-graph';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
@@ -876,17 +876,32 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
 
   const selectedBranchSet = useMemo(() => new Set(selectedBranchRefs), [selectedBranchRefs]);
 
+  const { data: allRepos } = useRepositories();
   const repository = useRepository(repoPath);
   const updateRepository = useUpdateRepository();
+
+  const worktrees = useMemo(() => branchData?.worktrees ?? [], [branchData?.worktrees]);
+  const mainWorktree = useMemo(() => worktrees.find((wt) => wt.isMain), [worktrees]);
+  const mainWorktreeBranch = mainWorktree?.branch ?? null;
+  const isWorktree = Boolean(repository?.isWorktree || (mainWorktree && !mainWorktree.isCurrent));
+
+  const rootRepoPath = repository?.rootWorktreePath || (mainWorktree && !mainWorktree.isCurrent ? mainWorktree.path : undefined);
+  const rootRepository = useMemo(() => {
+    if (!rootRepoPath || !allRepos) return null;
+    return allRepos.find((r) => r.path === rootRepoPath) || null;
+  }, [allRepos, rootRepoPath]);
+
   const customBranchScripts = useMemo(() => {
-    const scripts = repository?.customScripts ?? [];
+    const scripts = (repository?.customScripts && repository.customScripts.length > 0)
+      ? repository.customScripts
+      : (rootRepository?.customScripts ?? repository?.customScripts ?? []);
     return scripts.filter((script) => (
       script.target === 'branch' &&
       script.action === 'run-bash-script' &&
       script.name.trim().length > 0 &&
       script.content.trim().length > 0
     ));
-  }, [repository?.customScripts]);
+  }, [repository, rootRepository]);
 
   // Group expanded state (for "Branches", "Remotes", and "Worktrees" group headers)
   const [localGroupExpanded, setLocalGroupExpanded] = useState(true);
@@ -1131,9 +1146,6 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   }, [log?.all, branchData?.branches, branchData?.branchCommits, branchData?.remotes, visibilityMap, getBranchEffectiveVisibility]);
 
   const currentBranch = branchData?.current?.trim() || statusData?.current?.trim() || '';
-  const worktrees = useMemo(() => branchData?.worktrees ?? [], [branchData?.worktrees]);
-  const mainWorktree = useMemo(() => worktrees.find((wt) => wt.isMain), [worktrees]);
-  const mainWorktreeBranch = mainWorktree?.branch ?? null;
   const branchToLinkedWorktreeMap = useMemo(() => {
     const map = new Map<string, (typeof worktrees)[number]>();
     for (const wt of worktrees) {
@@ -4626,14 +4638,24 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                   </div>
 
                   <div className="pt-2 border-t border-base-200">
-                    <Link
-                      href={workspaceUrl(repoName, '/custom-scripts')}
-                      className="w-full btn btn-ghost btn-xs justify-start gap-1.5 font-normal text-xs cursor-pointer"
-                      onClick={() => setIsCustomScriptsMenuOpen(false)}
-                    >
-                      <i className="iconoir-settings text-[14px]" aria-hidden="true" />
-                      Manage scripts...
-                    </Link>
+                    {isWorktree ? (
+                      <div
+                        className="w-full btn btn-ghost btn-xs justify-start gap-1.5 font-normal text-xs opacity-50 cursor-not-allowed select-none"
+                        title="Manage scripts is disabled for worktrees"
+                      >
+                        <i className="iconoir-settings text-[14px]" aria-hidden="true" />
+                        Manage scripts...
+                      </div>
+                    ) : (
+                      <Link
+                        href={workspaceUrl(repoName, '/custom-scripts')}
+                        className="w-full btn btn-ghost btn-xs justify-start gap-1.5 font-normal text-xs cursor-pointer"
+                        onClick={() => setIsCustomScriptsMenuOpen(false)}
+                      >
+                        <i className="iconoir-settings text-[14px]" aria-hidden="true" />
+                        Manage scripts...
+                      </Link>
+                    )}
                   </div>
                 </div>
               )}

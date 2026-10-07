@@ -23,7 +23,7 @@ export function CommandPalette() {
   const recentRepositories = useMemo(
     () =>
       (repositories || [])
-        .filter((repo) => Boolean(repo.lastOpenedAt))
+        .filter((repo) => Boolean(repo.lastOpenedAt) && !repo.isWorktree)
         .sort(sortByLastOpenedDesc)
         .slice(0, 5),
     [repositories]

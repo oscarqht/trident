@@ -32,11 +32,21 @@ function WorkspaceCustomScriptsContent() {
 
   useWorkspaceTitle(repoPath, 'Custom scripts');
 
-  const { isLoading: isReposLoading } = useRepositories();
+  const { data: repos, isLoading: isReposLoading } = useRepositories();
   const repository = useRepository(repoPath);
   const updateRepository = useUpdateRepository();
 
-  const scripts = useMemo(() => repository?.customScripts ?? [], [repository?.customScripts]);
+  const parentRepo = useMemo(() => {
+    if (!repository?.rootWorktreePath || !repos) return null;
+    return repos.find((r) => r.path === repository.rootWorktreePath) || null;
+  }, [repos, repository]);
+
+  const scripts = useMemo(() => {
+    if (repository?.customScripts && repository.customScripts.length > 0) {
+      return repository.customScripts;
+    }
+    return parentRepo?.customScripts ?? repository?.customScripts ?? [];
+  }, [repository, parentRepo]);
   const [editingScriptId, setEditingScriptId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ScriptDraft>(EMPTY_DRAFT);
   const [formError, setFormError] = useState<string | null>(null);
@@ -47,6 +57,51 @@ function WorkspaceCustomScriptsContent() {
 
   if (!repoPath || !repository) {
     return <div className="p-8">Repository not found.</div>;
+  }
+
+  if (repository.isWorktree) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto space-y-6">
+        <div className="pb-3 border-b border-base-300">
+          <h1 className="text-xl font-bold tracking-tight text-base-content">Custom Scripts</h1>
+          <p className="text-xs text-base-content/60 mt-0.5">
+            Manage custom bash scripts for this repository.
+          </p>
+        </div>
+
+        <div className="alert alert-info bg-info/10 border border-info/30 text-xs">
+          <i className="iconoir-info-circle text-base text-info shrink-0" aria-hidden="true" />
+          <span>
+            This workspace is a git worktree. Custom scripts are automatically inherited from the parent repository and cannot be managed directly in a worktree.
+          </span>
+        </div>
+
+        <div className="border border-base-300 rounded-lg p-5 bg-base-100">
+          <div>
+            <h2 className="text-sm font-semibold text-base-content mb-4">Inherited Scripts</h2>
+            {scripts.length === 0 ? (
+              <p className="text-xs text-base-content/60 py-4 text-center">No custom scripts configured in parent repository.</p>
+            ) : (
+              <div className="space-y-3">
+                {scripts.map((script) => (
+                  <div key={script.id} className="border border-base-300 rounded-lg p-3.5 bg-base-100">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-xs truncate">{script.name}</div>
+                        <div className="text-[11px] text-base-content/60 mt-0.5">
+                          Target: Branch | Action: Run bash script (Read-only)
+                        </div>
+                      </div>
+                    </div>
+                    <pre className="mt-2.5 text-xs font-mono bg-base-200/50 border border-base-300/40 rounded p-2.5 overflow-auto max-h-36 whitespace-pre-wrap break-words">{script.content}</pre>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const resetForm = () => {

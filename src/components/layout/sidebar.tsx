@@ -214,20 +214,33 @@ export function Sidebar({ className, initialCollapsed = false }: SidebarPropsWit
             {!isCollapsed && <span>Stashes</span>}
           </Link>
 
-          <Link
-            href={getHref('/custom-scripts')}
-            className={cn(
-              "flex items-center gap-2.5 rounded-md text-xs font-medium transition-colors",
-              isCollapsed ? "justify-center h-8 w-8 mx-auto" : "px-2.5 py-1.5 w-full",
-              isActive('custom-scripts')
-                ? "bg-base-100 text-base-content shadow-xs font-semibold border border-base-300/60"
-                : "text-base-content/70 hover:text-base-content hover:bg-base-200/60"
-            )}
-            title={isCollapsed ? "Custom scripts" : undefined}
-          >
-            <i className="iconoir-terminal text-[17px] shrink-0" aria-hidden="true" />
-            {!isCollapsed && <span>Custom scripts</span>}
-          </Link>
+          {repository?.isWorktree ? (
+            <div
+              className={cn(
+                "flex items-center gap-2.5 rounded-md text-xs font-medium opacity-40 cursor-not-allowed select-none",
+                isCollapsed ? "justify-center h-8 w-8 mx-auto" : "px-2.5 py-1.5 w-full"
+              )}
+              title={isCollapsed ? "Custom scripts (disabled for worktrees)" : "Manage scripts is disabled for worktrees"}
+            >
+              <i className="iconoir-terminal text-[17px] shrink-0" aria-hidden="true" />
+              {!isCollapsed && <span>Custom scripts</span>}
+            </div>
+          ) : (
+            <Link
+              href={getHref('/custom-scripts')}
+              className={cn(
+                "flex items-center gap-2.5 rounded-md text-xs font-medium transition-colors",
+                isCollapsed ? "justify-center h-8 w-8 mx-auto" : "px-2.5 py-1.5 w-full",
+                isActive('custom-scripts')
+                  ? "bg-base-100 text-base-content shadow-xs font-semibold border border-base-300/60"
+                  : "text-base-content/70 hover:text-base-content hover:bg-base-200/60"
+              )}
+              title={isCollapsed ? "Custom scripts" : undefined}
+            >
+              <i className="iconoir-terminal text-[17px] shrink-0" aria-hidden="true" />
+              {!isCollapsed && <span>Custom scripts</span>}
+            </Link>
+          )}
 
           <Link
             href={getHref('/settings')}
