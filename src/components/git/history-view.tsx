@@ -3226,7 +3226,11 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
                   )}
                   style={{ paddingLeft: '20px' }}
                   onClick={() => handleOpenWorktreeInNewTab(worktree.path, worktree.isCurrent)}
-                  title={worktree.path}
+                  title={
+                    worktree.lastModified
+                      ? `${worktree.path}\nLast modified: ${new Date(worktree.lastModified).toLocaleString()}`
+                      : worktree.path
+                  }
                   disabled={worktree.isCurrent}
                 >
                   <i className={`iconoir-folder text-[14px] shrink-0 ${worktree.isCurrent ? 'text-primary' : 'opacity-60'}`} aria-hidden="true" />
