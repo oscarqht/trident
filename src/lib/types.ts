@@ -22,6 +22,8 @@ export interface Repository {
   localGroupExpanded?: boolean;
   remotesGroupExpanded?: boolean;
   worktreesGroupExpanded?: boolean;
+  isWorktree?: boolean;
+  rootWorktreePath?: string;
 }
 
 export interface GitWorktree {

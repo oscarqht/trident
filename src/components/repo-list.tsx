@@ -76,16 +76,18 @@ export function RepoList() {
 
     const sortedRepos = useMemo(() => {
         if (!repos) return [];
-        return [...repos].sort((a, b) => {
-            const aTime = a.lastOpenedAt ? new Date(a.lastOpenedAt).getTime() : 0;
-            const bTime = b.lastOpenedAt ? new Date(b.lastOpenedAt).getTime() : 0;
-            if (aTime !== bTime) {
-                return bTime - aTime;
-            }
-            const aName = getRepositoryDisplayName(a).toLowerCase();
-            const bName = getRepositoryDisplayName(b).toLowerCase();
-            return aName.localeCompare(bName);
-        });
+        return repos
+            .filter((repo) => !repo.isWorktree)
+            .sort((a, b) => {
+                const aTime = a.lastOpenedAt ? new Date(a.lastOpenedAt).getTime() : 0;
+                const bTime = b.lastOpenedAt ? new Date(b.lastOpenedAt).getTime() : 0;
+                if (aTime !== bTime) {
+                    return bTime - aTime;
+                }
+                const aName = getRepositoryDisplayName(a).toLowerCase();
+                const bName = getRepositoryDisplayName(b).toLowerCase();
+                return aName.localeCompare(bName);
+            });
     }, [repos]);
 
     const filteredRepos = useMemo(() => {
