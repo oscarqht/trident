@@ -308,7 +308,8 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   const [pullLoadingBranches, setPullLoadingBranches] = useState(false);
   const [isFetchingAllRemotes, setIsFetchingAllRemotes] = useState(false);
   const [isOpeningRepoFolder, setIsOpeningRepoFolder] = useState(false);
-  const [isOpeningRepoTerminal, setIsOpeningRepoTerminal] = useState(false);
+  const [openingTerminalPath, setOpeningTerminalPath] = useState<string | null>(null);
+  const isOpeningRepoTerminal = openingTerminalPath === repoPath;
 
   // Checkout to local dialog state
   const [isCheckoutToLocalOpen, setIsCheckoutToLocalOpen] = useState(false);
@@ -2439,15 +2440,15 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
     }
   }, [isOpeningRepoFolder, repoPath]);
 
-  const handleOpenRepoTerminal = useCallback(async () => {
-    if (isOpeningRepoTerminal) return;
+  const handleOpenRepoTerminal = useCallback(async (terminalPath = repoPath) => {
+    if (openingTerminalPath) return;
 
-    setIsOpeningRepoTerminal(true);
+    setOpeningTerminalPath(terminalPath);
     try {
       const response = await fetch('/api/fs/open-terminal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: repoPath }),
+        body: JSON.stringify({ path: terminalPath }),
       });
       const result = await response.json().catch(() => ({}));
 
@@ -2461,9 +2462,9 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
         description: error instanceof Error ? error.message : 'Unknown error',
       });
     } finally {
-      setIsOpeningRepoTerminal(false);
+      setOpeningTerminalPath(null);
     }
-  }, [isOpeningRepoTerminal, repoPath]);
+  }, [openingTerminalPath, repoPath]);
 
   const handleOpenWorktreeInNewTab = useCallback((worktreePath: string, isCurrentWorktree: boolean) => {
     if (isCurrentWorktree) return;
@@ -3024,7 +3025,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
   }, [localBranchTree, currentBranch, mainWorktreeBranch]);
 
   const branchTreePopoverContent = (
-    <div className="w-[22rem] max-w-[calc(100vw-2rem)] flex flex-col border border-base-300 bg-base-100 rounded-lg shadow-lg overflow-hidden">
+    <div className="w-[36rem] max-w-[calc(100vw-2rem)] flex flex-col border border-base-300 bg-base-100 rounded-lg shadow-lg overflow-hidden">
       <div className="px-3.5 border-b border-base-300 flex items-center justify-between bg-base-100 h-11 shrink-0">
         <h2 className="font-semibold text-sm">Branches</h2>
         <div className="flex items-center gap-1">
@@ -3230,34 +3231,64 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
             )}
             {worktreesGroupExpanded && worktrees.map((worktree) => {
               const row = (
-                <button
-                  type="button"
+                <div
                   className={cn(
                     "group flex w-full items-center gap-2 px-2 py-1.5 text-sm rounded-md transition-colors text-left",
                     worktree.isCurrent ? "cursor-default opacity-85" : "cursor-pointer hover:bg-base-200"
                   )}
                   style={{ paddingLeft: '20px' }}
-                  onClick={() => handleOpenWorktreeInNewTab(worktree.path, worktree.isCurrent)}
-                  title={
-                    worktree.lastModified
-                      ? `${worktree.path}\nLast modified: ${new Date(worktree.lastModified).toLocaleString()}`
-                      : worktree.path
-                  }
-                  disabled={worktree.isCurrent}
                 >
-                  <i className={`iconoir-folder text-[14px] shrink-0 ${worktree.isCurrent ? 'text-primary' : 'opacity-60'}`} aria-hidden="true" />
-                  <span className="truncate min-w-0 flex-1">{worktree.path}</span>
-                  {worktree.branch && (
-                    <span className="shrink-0 text-xs opacity-60">
-                      {worktree.branch}
-                    </span>
-                  )}
-                  {worktree.isCurrent && (
-                    <span className="shrink-0 text-xs text-primary font-medium">
-                      current
-                    </span>
-                  )}
-                </button>
+                  <button
+                    type="button"
+                    className="flex flex-1 min-w-0 items-center gap-2 text-left disabled:cursor-default"
+                    onClick={() => handleOpenWorktreeInNewTab(worktree.path, worktree.isCurrent)}
+                    title={
+                      worktree.lastModified
+                        ? `${worktree.path}\nLast modified: ${new Date(worktree.lastModified).toLocaleString()}`
+                        : worktree.path
+                    }
+                    disabled={worktree.isCurrent}
+                  >
+                    <i className={`iconoir-folder text-[14px] shrink-0 ${worktree.isCurrent ? 'text-primary' : 'opacity-60'}`} aria-hidden="true" />
+                    <span className="truncate min-w-0 flex-1">{worktree.path}</span>
+                    {worktree.branch && (
+                      <span className="max-w-[40%] truncate text-xs opacity-60" title={worktree.branch}>
+                        {worktree.branch}
+                      </span>
+                    )}
+                    {worktree.isCurrent && (
+                      <span className="shrink-0 text-xs text-primary font-medium">
+                        current
+                      </span>
+                    )}
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square"
+                      onClick={() => void handleOpenRepoTerminal(worktree.path)}
+                      disabled={openingTerminalPath !== null}
+                      title={`Open terminal in ${worktree.path}`}
+                      aria-label={`Open terminal in ${worktree.path}`}
+                    >
+                      {openingTerminalPath === worktree.path ? (
+                        <span className="loading loading-spinner loading-xs" />
+                      ) : (
+                        <i className="iconoir-terminal text-[15px]" aria-hidden="true" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square"
+                      onClick={() => handleOpenWorktreeInNewTab(worktree.path, worktree.isCurrent)}
+                      disabled={worktree.isCurrent}
+                      title={worktree.isCurrent ? 'Current worktree' : `Open ${worktree.path} in a new tab`}
+                      aria-label={`Open worktree ${worktree.path} in a new tab`}
+                    >
+                      <i className="iconoir-open-new-window text-[15px]" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
               );
 
               if (worktree.isCurrent) {
@@ -4664,7 +4695,7 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
             <button
               className="btn btn-sm btn-ghost border border-base-300 gap-1.5 header-icon-btn text-xs font-medium"
               onClick={() => void handleOpenRepoTerminal()}
-              disabled={isOpeningRepoTerminal}
+              disabled={openingTerminalPath !== null}
               title="Open terminal in repository folder"
               aria-label="Open Terminal"
             >
