@@ -156,6 +156,9 @@ app_icon.save('assets/icon.ico', format='ICO', sizes=[(256, 256), (128, 128), (6
 print("Running tauri icon generator for bundle assets...")
 subprocess.run(['npx', 'tauri', 'icon', 'assets/icon.png', '-o', 'src-tauri/icons'], check=True)
 
+# Use a new bundle icon filename so macOS does not reuse the old notification icon.
+os.replace('src-tauri/icons/icon.icns', 'src-tauri/icons/trident.icns')
+
 # Re-save tray-icon.png in case tauri icon altered it or touched it
 render_tray_icons()
 
