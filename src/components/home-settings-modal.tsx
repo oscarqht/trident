@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useTheme } from 'next-themes';
 import { FileSystemBrowser } from './fs-browser';
 import { useEscapeDismiss } from '@/hooks/use-escape-dismiss';
+import { DesktopSettingsSection } from './desktop-settings-section';
 
 interface Settings {
   defaultRootFolder: string | null;
@@ -168,6 +169,11 @@ export function HomeSettingsModal({ open, onOpenChange, onSettingsChange }: Home
                     </button>
                   </div>
                 )}
+              </div>
+
+              {/* Desktop Permissions & Settings */}
+              <div className="pt-2 border-t border-base-200">
+                <DesktopSettingsSection />
               </div>
             </div>
           )}

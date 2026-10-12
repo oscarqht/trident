@@ -1,48 +1,7 @@
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::AppHandle;
-#[cfg(target_os = "macos")]
-use tauri::{Manager, Wry};
-use tauri_plugin_autostart::ManagerExt;
 
-#[cfg(target_os = "macos")]
-use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(target_os = "macos")]
-use std::sync::Mutex;
-
-#[cfg(target_os = "macos")]
-pub struct TrayFdaState {
-    pub item: Mutex<Option<CheckMenuItem<Wry>>>,
-    pub granted: AtomicBool,
-}
-
-#[cfg(target_os = "macos")]
-pub fn update_fda_menu_item(app: &AppHandle) {
-    if let Some(state) = app.try_state::<TrayFdaState>() {
-        let granted = check_full_disk_access();
-        let prev = state.granted.swap(granted, Ordering::Relaxed);
-        if granted == prev {
-            return;
-        }
-
-        let item = {
-            if let Ok(guard) = state.item.lock() {
-                guard.clone()
-            } else {
-                None
-            }
-        };
-
-        if let Some(item) = item {
-            let _ = item.set_checked(granted);
-            let _ = item.set_text(if granted {
-                "Full Disk Access Enabled"
-            } else {
-                "Grant Full Disk Access..."
-            });
-        }
-    }
-}
 
 fn copy_to_clipboard(text: &str) {
     #[cfg(target_os = "macos")]
@@ -133,62 +92,10 @@ pub fn setup_tray(
     app: &AppHandle,
     server_url: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let autostart_enabled = app
-        .autolaunch()
-        .is_enabled()
-        .unwrap_or(false);
-
     let open_item = MenuItem::with_id(app, "open_browser", "Open in Browser", true, None::<&str>)?;
     let copy_item = MenuItem::with_id(app, "copy_url", "Copy URL", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
 
-    #[cfg(target_os = "macos")]
-    let fda_granted = check_full_disk_access();
-    #[cfg(target_os = "macos")]
-    let fda_text = if fda_granted {
-        "Full Disk Access Enabled"
-    } else {
-        "Grant Full Disk Access..."
-    };
-    #[cfg(target_os = "macos")]
-    let fda_item = CheckMenuItem::with_id(
-        app,
-        "full_disk_access",
-        fda_text,
-        true,
-        fda_granted,
-        None::<&str>,
-    )?;
-    #[cfg(target_os = "macos")]
-    {
-        app.manage(TrayFdaState {
-            item: Mutex::new(Some(fda_item.clone())),
-            granted: AtomicBool::new(fda_granted),
-        });
-
-        if !fda_granted {
-            let app_handle_poll = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
-                loop {
-                    interval.tick().await;
-                    if check_full_disk_access() {
-                        update_fda_menu_item(&app_handle_poll);
-                        break;
-                    }
-                }
-            });
-        }
-    }
-
-    let autostart_item = CheckMenuItem::with_id(
-        app,
-        "toggle_autostart",
-        "Launch at Login",
-        true,
-        autostart_enabled,
-        None::<&str>,
-    )?;
     let check_updates_item = MenuItem::with_id(
         app,
         "check_updates",
@@ -208,30 +115,12 @@ pub fn setup_tray(
     let sep2 = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit Trident", true, None::<&str>)?;
 
-    #[cfg(target_os = "macos")]
     let menu = Menu::with_items(
         app,
         &[
             &open_item,
             &copy_item,
             &sep1,
-            &fda_item,
-            &autostart_item,
-            &check_updates_item,
-            &version_item,
-            &sep2,
-            &quit_item,
-        ],
-    )?;
-
-    #[cfg(not(target_os = "macos"))]
-    let menu = Menu::with_items(
-        app,
-        &[
-            &open_item,
-            &copy_item,
-            &sep1,
-            &autostart_item,
             &check_updates_item,
             &version_item,
             &sep2,
@@ -249,7 +138,7 @@ pub fn setup_tray(
         .menu(&menu)
         .show_menu_on_left_click(false)
         .tooltip("Trident Git Client")
-        .on_menu_event(move |app_handle, event| {
+        .on_menu_event(move |_app_handle, event| {
             let id = event.id.as_ref();
             match id {
                 "open_browser" => {
@@ -258,23 +147,8 @@ pub fn setup_tray(
                 "copy_url" => {
                     copy_to_clipboard(&url_for_menu);
                 }
-                #[cfg(target_os = "macos")]
-                "full_disk_access" => {
-                    open_full_disk_access_settings();
-                    update_fda_menu_item(app_handle);
-                }
-                "toggle_autostart" => {
-                    let autolaunch = app_handle.autolaunch();
-                    if let Ok(enabled) = autolaunch.is_enabled() {
-                        if enabled {
-                            let _ = autolaunch.disable();
-                        } else {
-                            let _ = autolaunch.enable();
-                        }
-                    }
-                }
                 "check_updates" => {
-                    let handle = app_handle.clone();
+                    let handle = _app_handle.clone();
                     tauri::async_runtime::spawn(async move {
                         crate::updater::handle_check_updates_click(&handle).await;
                     });

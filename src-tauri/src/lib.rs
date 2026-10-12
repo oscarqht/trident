@@ -57,7 +57,7 @@ pub fn run() {
                                     .notification()
                                     .builder()
                                     .title("Trident Permissions")
-                                    .body("Trident needs Full Disk Access to avoid folder permission prompts when inspecting repositories. Click the status bar icon to configure.")
+                                    .body("Trident needs Full Disk Access to avoid folder permission prompts when inspecting repositories. Configure in Settings.")
                                     .show();
                             }
                         }

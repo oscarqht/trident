@@ -11,6 +11,7 @@ import { useCredentials } from '@/hooks/use-credentials';
 import Image from 'next/image';
 import { getRepoFolderName, getRepositoryDisplayName } from '@/lib/utils';
 import { RepoEmojiPicker } from '@/components/repo-emoji-picker';
+import { DesktopSettingsSection } from '@/components/desktop-settings-section';
 
 function getHostname(url: string): string | null {
   try {
@@ -417,6 +418,8 @@ function WorkspaceSettingsContent() {
                         </div>
                     </div>
                 </div>
+
+                <DesktopSettingsSection cardVariant />
             </div>
         </div>
     );

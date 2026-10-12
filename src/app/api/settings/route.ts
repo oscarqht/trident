@@ -1,14 +1,17 @@
 
 import { NextResponse } from 'next/server';
 import { getSettings, updateSettings, getDefaultRootFolder } from '@/lib/store';
+import { getDesktopStatus } from '@/lib/desktop';
 import { z } from 'zod';
 
 export async function GET() {
   const settings = getSettings();
   const resolvedDefaultFolder = getDefaultRootFolder();
+  const desktop = getDesktopStatus();
   return NextResponse.json({
     ...settings,
     resolvedDefaultFolder, // The actual folder that will be used (after fallback logic)
+    desktop,
   });
 }
 
