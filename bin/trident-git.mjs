@@ -110,12 +110,13 @@ function isTailscaleIP(ip) {
 }
 
 function resolveHost() {
-  if (process.env.HOST) return process.env.HOST;
-  if (process.env.HOSTNAME) return process.env.HOSTNAME;
+  const explicit = process.env.HOST || process.env.HOSTNAME;
+  if (explicit) return isTailscaleIP(explicit) ? "0.0.0.0" : explicit;
   for (const addrs of Object.values(os.networkInterfaces())) {
     for (const addr of addrs ?? []) {
       if (addr.family === "IPv4" && !addr.internal && isTailscaleIP(addr.address)) {
-        return addr.address;
+        // Bind all interfaces so both 127.0.0.1 and the Tailscale IP work.
+        return "0.0.0.0";
       }
     }
   }
@@ -127,7 +128,7 @@ function printHelp() {
 
 Options:
   -p, --port <port>  Port to run on (default: 3100)
-  -H, --host <host>  Host to bind to (defaults to Tailscale IP, fallback 127.0.0.1)
+  -H, --host <host>  Host to bind to (all interfaces if Tailscale is up, else 127.0.0.1)
   --dev              Run in development mode
   -h, --help         Show this help message
 `);

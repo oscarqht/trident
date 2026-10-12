@@ -29,16 +29,27 @@ pub fn is_tailscale_ip(ipv4: std::net::Ipv4Addr) -> bool {
     octets[0] == 100 && (64..=127).contains(&octets[1])
 }
 
-/// Resolve the host to bind to. Looks for Tailscale IP (100.64.0.0/10), falling back to 127.0.0.1.
+/// An explicit Tailscale IP is widened to all interfaces for the same reason as auto-detection.
+fn normalize_bind_host(host: &str) -> String {
+    match host.parse::<std::net::Ipv4Addr>() {
+        Ok(ip) if is_tailscale_ip(ip) => "0.0.0.0".to_string(),
+        _ => host.to_string(),
+    }
+}
+
+/// Resolve the host to bind to. When a Tailscale IP (100.64.0.0/10) is present, bind all
+/// interfaces so the app is reachable both via loopback and via the Tailscale address
+/// (binding only the Tailscale IP leaves 127.0.0.1 refused and local connections to the
+/// machine's own Tailscale IP can hang). Falls back to 127.0.0.1.
 pub fn resolve_host() -> String {
     if let Ok(host) = std::env::var("HOST") {
         if !host.trim().is_empty() {
-            return host.trim().to_string();
+            return normalize_bind_host(host.trim());
         }
     }
     if let Ok(host) = std::env::var("HOSTNAME") {
         if !host.trim().is_empty() {
-            return host.trim().to_string();
+            return normalize_bind_host(host.trim());
         }
     }
 
@@ -46,13 +57,18 @@ pub fn resolve_host() -> String {
         for (_name, ip) in interfaces {
             if let std::net::IpAddr::V4(ipv4) = ip {
                 if is_tailscale_ip(ipv4) {
-                    return ipv4.to_string();
+                    return "0.0.0.0".to_string();
                 }
             }
         }
     }
 
     "127.0.0.1".to_string()
+}
+
+/// Host used to reach the local server from this machine.
+fn client_host(bind_host: &str) -> &str {
+    if bind_host == "0.0.0.0" || bind_host == "::" { "127.0.0.1" } else { bind_host }
 }
 
 /// Check if a local port is available to bind
@@ -505,9 +521,9 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
     println!("[trident] Spawned Next.js server (PID: {pid}) on http://{host}:{port}");
 
     // Monitor process health and wait until HTTP port responds
-    let server_url = format!("http://{host}:{port}");
+    let server_url = format!("http://{}:{port}", client_host(&host));
     let wait_url = server_url.clone();
-    let poll_host = host.clone();
+    let poll_host = client_host(&host).to_string();
 
     tokio::task::spawn(async move {
         // Poll for server readiness
@@ -641,7 +657,7 @@ mod tests {
     #[test]
     fn test_resolve_host_fallback_or_tailscale() {
         let host = resolve_host();
-        if host != "127.0.0.1" {
+        if host != "127.0.0.1" && host != "0.0.0.0" {
             let ip: Ipv4Addr = host.parse().expect("valid IPv4");
             assert!(is_tailscale_ip(ip));
         }
