@@ -2,7 +2,7 @@ import { simpleGit, SimpleGit, SimpleGitOptions } from 'simple-git';
 import { GitStatus, GitLog, GitWorktree, GitConflictState } from './types';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { realpathSync } from 'node:fs';
+import { realpathSync, existsSync } from 'node:fs';
 import { mkdtemp, unlink, access, readFile, writeFile, stat } from 'node:fs/promises';
 import { join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -1086,7 +1086,88 @@ export class GitService {
   }
 
   async deleteBranch(branch: string): Promise<void> {
-    await this.git.deleteLocalBranch(branch, true);
+    try {
+      await this.git.deleteLocalBranch(branch, true);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error || '');
+      const match = errorMessage.match(/(?:cannot delete branch|Cannot delete branch)\s+['"‘“]?([^'"’”\s]+)['"’”]?\s+(?:used by worktree at|checked out at)\s+['"‘“]?([^'"’\n\r]+)['"’”]?/i);
+      if (!match) {
+        throw error;
+      }
+
+      const lockedBranch = match[1];
+      const rawWorktreePath = match[2].trim().replace(/^['"]|['"]$/g, '');
+      const worktreePath = resolve(rawWorktreePath);
+
+      // 1. If worktree directory doesn't exist on disk, prune stale worktree references and retry
+      if (!existsSync(worktreePath)) {
+        try {
+          await this.git.raw(['worktree', 'prune']);
+          await this.git.deleteLocalBranch(branch, true);
+          return;
+        } catch {
+          throw error;
+        }
+      }
+
+      // 2. If worktree exists, check what HEAD is currently pointing to
+      let currentHeadRef = '';
+      try {
+        const { stdout } = await execFileAsync('git', ['-C', worktreePath, 'rev-parse', '--symbolic-full-name', 'HEAD'], {
+          env: getAugmentedEnv(),
+        });
+        currentHeadRef = stdout.trim();
+      } catch {
+        try {
+          const { stdout } = await execFileAsync('git', ['-C', worktreePath, 'symbolic-ref', 'HEAD'], {
+            env: getAugmentedEnv(),
+          });
+          currentHeadRef = stdout.trim();
+        } catch {
+          // detached HEAD or error
+        }
+      }
+
+      // If the worktree legitimately has this branch checked out, we cannot delete it.
+      if (currentHeadRef === `refs/heads/${branch}` || currentHeadRef === `refs/heads/${lockedBranch}`) {
+        throw new Error(`Cannot delete branch "${branch}" because it is currently checked out in worktree at "${worktreePath}". Please switch to another branch in that worktree or remove the worktree first.`);
+      }
+
+      // 3. Otherwise, the worktree is on a different branch (or detached), but has stale rebase/bisect state locking this branch.
+      // Clean up the interrupted rebase/bisect in that worktree and retry deletion.
+      let cleanedUp = false;
+      try {
+        await execFileAsync('git', ['-C', worktreePath, 'rebase', '--quit'], {
+          env: getAugmentedEnv(),
+        });
+        cleanedUp = true;
+      } catch {
+        try {
+          await execFileAsync('git', ['-C', worktreePath, 'rebase', '--abort'], {
+            env: getAugmentedEnv(),
+          });
+          cleanedUp = true;
+        } catch {
+          // not rebasing
+        }
+      }
+
+      try {
+        await execFileAsync('git', ['-C', worktreePath, 'bisect', 'reset'], {
+          env: getAugmentedEnv(),
+        });
+        cleanedUp = true;
+      } catch {
+        // ignore if not bisecting
+      }
+
+      if (cleanedUp) {
+        await this.git.deleteLocalBranch(branch, true);
+        return;
+      }
+
+      throw error;
+    }
   }
 
   async deleteWorktree(worktreePath: string, force: boolean = false): Promise<void> {
