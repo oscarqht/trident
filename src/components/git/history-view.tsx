@@ -1614,11 +1614,15 @@ export function HistoryView({ repoPath }: { repoPath: string }) {
           description: (
             <div>
               <div>The following branches could not be deleted:</div>
-              <ul className="mt-1 max-h-40 overflow-y-auto list-disc pl-5">
+              <ul className="mt-1 max-h-40 overflow-y-auto list-disc pl-5 space-y-1">
                 {failedBranches.map(({ branch, error }) => (
                   <li key={branch} className="break-all">
-                    <span>{branch}</span>
-                    {error && <span className="opacity-75 block text-xs">{error}</span>}
+                    <span className="font-semibold">{branch}</span>
+                    {error && (
+                      <span className="opacity-75 block text-xs mt-0.5">
+                        {error.replace(/^(?:GitError:\s*)?(?:error:\s*)?/i, '')}
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>
