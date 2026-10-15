@@ -35,7 +35,19 @@ icvp = {
 }
 if background:
     icvp['backgroundType'] = 2
-    icvp['backgroundImageAlias'] = Alias.for_file(background).to_bytes()
+    alias = Alias.for_file(background)
+    # The volume is mounted in a temporary directory, so mac_alias records paths that climb out of it.
+    # Record volume-relative paths like Finder does, so the alias still resolves when another volume
+    # with the same name is mounted.
+    volume = alias.volume.name
+    folder = os.path.basename(os.path.dirname(background))
+    alias.volume.posix_path = f'/Volumes/{volume}'
+    alias.volume.disk_type = 5
+    alias.volume.attribute_flags = 3330
+    alias.target.posix_path = f'/{folder}/{os.path.basename(background)}'
+    alias.target.cnid_path = (alias.target.folder_cnid,)
+    alias.target.carbon_path = f'{volume}:{folder}:\0{os.path.basename(background)}'.encode()
+    icvp['backgroundImageAlias'] = alias.to_bytes()
 
 with DSStore.open(os.path.join(mount, '.DS_Store'), 'w+') as store:
     store['.']['vSrn'] = ('long', 1)
