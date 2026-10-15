@@ -56,6 +56,7 @@ class DmgLayoutTest(unittest.TestCase):
                     self.assertEqual(options['iconSize'], 96)
                     self.assertEqual(store['Trident.app']['Iloc'], (259, 258))
                     self.assertEqual(alias.target.posix_path, '/.background/background.png')
+                    self.assertEqual(alias.volume.posix_path, '/Volumes/Trident')
                     self.assertEqual(alias.target.carbon_path, b'Trident:.background:\x00background.png')
                     self.assertEqual(len(alias.target.cnid_path), 1)
                     self.assertEqual(os.stat(remount / '.background/background.png').st_ino,
