@@ -3,6 +3,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { updateSigningKeychainSearchList } from './macos-release.mjs';
+
+export function signStyledDmg(dmg, identity, env = process.env, execute = (command, args) => execFileSync(command, args, { encoding: 'utf8' })) {
+  const keychain = env.TRIDENT_SIGNING_KEYCHAIN;
+  // Tauri can replace the search list during packaging. Restore this job's
+  // keychain, as Raft does, before re-signing the styled installer.
+  if (keychain) updateSigningKeychainSearchList(keychain, true, execute);
+  execute('codesign', ['--force', '--sign', identity, '--timestamp', ...(keychain ? ['--keychain', keychain] : []), dmg]);
+  execute('codesign', ['--verify', '--strict', dmg]);
+}
 
 // Finder icon/text sizes are not exposed by Tauri's DMG configuration.
 // Apply the layout before release notarization, then restore the DMG signature.
@@ -97,8 +107,7 @@ export function styleDmg(dmg) {
     attached = false;
     run('hdiutil', ['convert', writable, '-format', 'UDZO', '-o', output]);
     if (identity) {
-      run('codesign', ['--force', '--sign', identity, '--timestamp', output]);
-      run('codesign', ['--verify', '--strict', output]);
+      signStyledDmg(output, identity, process.env, run);
     }
     fs.copyFileSync(output, dmg);
     console.log(`Styled installer: ${dmg}`);

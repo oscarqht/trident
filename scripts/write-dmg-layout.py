@@ -43,6 +43,8 @@ if background:
     # Record volume-relative paths like Finder does, so the alias still resolves when another volume
     # with the same name is mounted.
     volume = alias.volume.name
+    if isinstance(volume, bytes):
+        volume = volume.decode('utf-8')
     folder = os.path.basename(os.path.dirname(background))
     alias.volume.posix_path = f'/Volumes/{volume}'
     alias.volume.disk_type = 5
