@@ -125,7 +125,7 @@ async function build(platform) {
   withSigningKeychain(env, signingEnv => {
     run(process.execPath, getTauriBuildArgs(platform, target), { env: signingEnv });
     const bundle = `src-tauri/target/${target}/release/bundle`;
-    verifyReleaseBundle(bundle, env);
+    verifyReleaseBundle(bundle, signingEnv);
     const destination = `release-assets/${platform}`;
     collectAssets(bundle, destination, platform);
     if (!fs.readdirSync(destination).some((name) => name.endsWith('.sig'))) throw new Error('Build did not produce signed updater artifacts');

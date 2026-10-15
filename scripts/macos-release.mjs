@@ -52,7 +52,7 @@ export function runStapler(action, target, execute = run, sleep = sleepSync) {
   }
 }
 
-export function verifyAndNotarize(app, dmg, env, execute = run, sleep = sleepSync) {
+export function verifyAndNotarize(app, dmg, env, execute = run, sleep = sleepSync, onAppRestapled = () => { throw new Error('Distribution containers must be rebuilt after repairing the app ticket.'); }) {
   validateCredentials(env);
   execute('codesign', ['--verify', '--deep', '--strict', '--verbose=2', app]);
   const details = execute('codesign', ['--display', '--verbose=4', app]);
@@ -60,7 +60,15 @@ export function verifyAndNotarize(app, dmg, env, execute = run, sleep = sleepSyn
       !details.includes(`TeamIdentifier=${env.APPLE_TEAM_ID}`) || !/flags=.*\bruntime\b/.test(details)) {
     throw new Error('App must have the expected Developer ID, team, and hardened runtime');
   }
-  runStapler('validate', app, execute, sleep);
+  try {
+    runStapler('validate', app, execute, sleep);
+  } catch (error) {
+    if (!/does not have a ticket stapled to it/.test(error.message)) throw error;
+    console.warn('Tauri app notarization completed without a stapled ticket; recovering it explicitly.');
+    runStapler('staple', app, execute, sleep);
+    runStapler('validate', app, execute, sleep);
+    onAppRestapled();
+  }
   execute('spctl', ['--assess', '--type', 'execute', '--verbose=2', app]);
   execute('codesign', ['--verify', '--strict', '--verbose=2', dmg]);
   const dmgDetails = execute('codesign', ['--display', '--verbose=4', dmg]);
@@ -183,6 +191,31 @@ export function verifyUpdaterKeyMatch(signaturePath, encodedPublicKey) {
   }
 }
 
+export function rebuildMacosContainers(app, dmg, archive, env, execute = run) {
+  if (!env.TRIDENT_SIGNING_KEYCHAIN) throw new Error('Repackaging requires the job signing keychain.');
+  if (!env.TAURI_SIGNING_PRIVATE_KEY) throw new Error('Repackaging requires TAURI_SIGNING_PRIVATE_KEY.');
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'trident-restaple-'));
+  try {
+    const staging = path.join(temporary, 'installer');
+    fs.mkdirSync(staging);
+    // ditto preserves the app ticket and resource metadata in the installer copy.
+    execute('ditto', ['--rsrc', '--extattr', app, path.join(staging, path.basename(app))]);
+    fs.symlinkSync('/Applications', path.join(staging, 'Applications'));
+    const image = path.join(temporary, 'installer.dmg');
+    execute('hdiutil', ['create', '-volname', path.basename(app, '.app'), '-srcfolder', staging, '-format', 'UDZO', '-ov', image]);
+    updateSigningKeychainSearchList(env.TRIDENT_SIGNING_KEYCHAIN, true, execute);
+    execute('codesign', ['--force', '--timestamp', '--keychain', env.TRIDENT_SIGNING_KEYCHAIN, '--sign', env.APPLE_SIGNING_IDENTITY, image]);
+    fs.copyFileSync(image, dmg);
+    // The archive bytes changed when the ticket was added; generate a fresh updater signature.
+    execute('tar', ['-czf', archive, '-C', path.dirname(app), path.basename(app)]);
+    execute(process.execPath, [path.resolve('node_modules/@tauri-apps/cli/tauri.js'), 'signer', 'sign', archive]);
+    const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+    verifyUpdaterKeyMatch(`${archive}.sig`, config.plugins.updater.pubkey);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
 export function verifyReleaseBundle(bundle, env, execute = run) {
   validateCredentials(env);
   const artifact = (folder, extension) => {
@@ -192,7 +225,10 @@ export function verifyReleaseBundle(bundle, env, execute = run) {
   };
   const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
   verifyUpdaterKeyMatch(artifact('macos', '.app.tar.gz.sig'), config.plugins.updater.pubkey);
-  verifyAndNotarize(artifact('macos', '.app'), artifact('dmg', '.dmg'), env, execute);
+  const app = artifact('macos', '.app');
+  const dmg = artifact('dmg', '.dmg');
+  verifyAndNotarize(app, dmg, env, execute, sleepSync, () =>
+    rebuildMacosContainers(app, dmg, artifact('macos', '.app.tar.gz'), env, execute));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -209,7 +245,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     } } }, null, 2));
   } else if (process.argv[2] === 'notarize') {
     const bundle = 'src-tauri/target/aarch64-apple-darwin/release/bundle';
-    verifyReleaseBundle(bundle, process.env);
+    const verify = signingEnv => verifyReleaseBundle(bundle, signingEnv);
+    if (process.env.TRIDENT_SIGNING_KEYCHAIN) verify(process.env);
+    else withSigningKeychain(process.env, verify);
     console.log('App and DMG passed signing, notarization, and Gatekeeper checks.');
   } else {
     throw new Error('Usage: node scripts/macos-release.mjs validate|prepare|sign-resources|notarize');
