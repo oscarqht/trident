@@ -12,11 +12,15 @@ if (!tagArg) {
 }
 
 const tag = tagArg.trim();
-const version = tag.replace(/^v/, '');
+if (!/^v\d+\.\d+\.\d+$/.test(tag)) throw new Error('Invalid release tag');
+const version = tag.slice(1);
+const assetsDir = process.env.RELEASE_ASSETS_DIR;
+const assetsBaseUrl = process.env.RELEASE_ASSETS_BASE_URL;
+if (assetsDir && !assetsBaseUrl) throw new Error('RELEASE_ASSETS_BASE_URL is required with RELEASE_ASSETS_DIR');
 
 console.log(`Generating updater JSON for release ${tag} (version ${version})...`);
 
-let repo = process.env.GITHUB_REPOSITORY;
+let repo = assetsDir ? 'local' : process.env.GITHUB_REPOSITORY;
 if (!repo) {
   try {
     repo = execSync('gh repo view --json nameWithOwner -q .nameWithOwner', {
@@ -38,11 +42,15 @@ if (!repo) repo = 'oscarqht/trident';
 
 let releaseData = { assets: [], body: '' };
 try {
-  const releaseJson = execSync(`gh release view "${tag}" --json assets,body`, {
-    encoding: 'utf8',
-    stdio: ['pipe', 'pipe', 'ignore'],
-  });
-  releaseData = JSON.parse(releaseJson);
+  if (assetsDir) {
+    releaseData = { assets: fs.readdirSync(assetsDir).map((name) => ({ name })), body: fs.readFileSync('changelog.txt', 'utf8').trim() };
+  } else {
+    const releaseJson = execSync(`gh release view "${tag}" --json assets,body`, {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    releaseData = JSON.parse(releaseJson);
+  }
 } catch (e) {
   if (isDryRun) {
     console.warn('[dry-run] "gh release view" unavailable, using empty asset list for simulation.');
@@ -58,6 +66,7 @@ console.log(`Found ${assets.length} assets on release ${tag}:`, Array.from(asset
 // 2. Identify .sig files and corresponding bundle archives
 const sigFiles = assets.filter((a) => a.name.endsWith('.sig'));
 if (sigFiles.length === 0) {
+  if (assetsDir) throw new Error('No updater signatures found in release assets');
   console.warn('No signature (.sig) files found on the release.');
   process.exit(0);
 }
@@ -74,11 +83,11 @@ for (const sigAsset of sigFiles) {
   }
 
   // Download signature content
-  const signature = execSync(`gh release download "${tag}" -p "${sigName}" -O -`, {
+  const signature = assetsDir ? fs.readFileSync(path.join(assetsDir, sigName), 'utf8').trim() : execSync(`gh release download "${tag}" -p "${sigName}" -O -`, {
     encoding: 'utf8',
   }).trim();
 
-  const downloadUrl = `https://github.com/${repo}/releases/download/${tag}/${targetAssetName}`;
+  const downloadUrl = assetsDir ? `${assetsBaseUrl}/${encodeURIComponent(targetAssetName)}` : `https://github.com/${repo}/releases/download/${tag}/${targetAssetName}`;
 
   // Match platform according to Tauri v2 conventions
   // macOS .app.tar.gz
@@ -152,8 +161,8 @@ const outputPath = path.resolve(process.cwd(), 'latest.json');
 fs.writeFileSync(outputPath, JSON.stringify(latestJson, null, 2) + '\n');
 console.log(`Wrote ${outputPath}`);
 
-if (isDryRun) {
-  console.log('[dry-run] Skipping upload.');
+if (isDryRun || assetsDir) {
+  console.log('Skipping GitHub upload (local assets or dry-run).');
   process.exit(0);
 }
 

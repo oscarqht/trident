@@ -52,3 +52,11 @@ src-tauri/*.key
 src-tauri/*.key.pub
 .worktrees
 .raft
+
+# GitLab release pipeline output
+/release.env
+/changelog.txt
+/latest.json
+/gitlab-tauri.conf.json
+/release-assets/
+/trident-*.pkg.tar.zst

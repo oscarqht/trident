@@ -172,7 +172,8 @@ npm start
 ## Project Structure
 
 ```
-.github/workflows/         # CI/CD (release tagging + npm publish)
+.gitlab-ci.yml             # Automated desktop builds and GitLab releases
+.github/workflows/         # Manual GitHub desktop release
 bin/                       # Packaged CLI entrypoint
 src/
 ├── app/                    # Next.js App Router pages
@@ -211,9 +212,9 @@ src/
 
 ## Release Automation
 
-The repository ships with GitHub Actions workflows for automated releases:
+GitLab CI owns automated desktop releases. See [GitLab release setup](docs/gitlab-ci.md) for runners, signing keys, permissions, and retries. GitHub Actions remains available for manually publishing an existing tag.
 
-1. When a new release tag is pushed (`v*`), or on merge to `main`, the `Release Desktop App` workflow builds and packages native desktop bundles for:
+1. When a new release tag is pushed (`v*`), or on a push/manual pipeline on `main`, the GitLab pipeline builds and packages native desktop bundles for:
    - **macOS**: Apple Silicon `.dmg` & `.app.tar.gz`
    - **Windows**: `.exe` (NSIS setup) & `.msi`
    - **Linux**:
@@ -224,7 +225,7 @@ The repository ships with GitHub Actions workflows for automated releases:
 
 ### Installing on Omarchy / Arch Linux
 
-Download `trident-<version>-1-x86_64.pkg.tar.zst` from GitHub Releases and install with `pacman`:
+Download `trident-<version>-1-x86_64.pkg.tar.zst` from the GitLab release and install with `pacman`:
 
 ```bash
 sudo pacman -U trident-<version>-1-x86_64.pkg.tar.zst

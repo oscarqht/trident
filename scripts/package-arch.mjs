@@ -17,7 +17,7 @@ if (!tag) {
 const version = tag.replace(/^v/, '');
 console.log(`Packaging Arch Linux package (.pkg.tar.zst) for ${tag} (version ${version})...`);
 
-const debDir = path.resolve('src-tauri/target/release/bundle/deb');
+const debDir = path.resolve(process.env.ARCH_DEB_DIR || 'src-tauri/target/release/bundle/deb');
 if (!fs.existsSync(debDir)) {
   console.error(`Debian bundle directory not found: ${debDir}`);
   process.exit(1);
