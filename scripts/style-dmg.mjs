@@ -15,7 +15,7 @@ function writeLayout(mount, layout, temporary) {
     '.background': [100, 100],
     '.VolumeIcon.icns': [100, 100],
   };
-  const spec = JSON.stringify({ window: [layout.windowSize.width, layout.windowSize.height], iconSize: 64, textSize: 12, items });
+  const spec = JSON.stringify({ window: [layout.windowSize.width, layout.windowSize.height], iconSize: 128, textSize: 12, items });
   execFileSync('python3', [path.join(import.meta.dirname, 'write-dmg-layout.py'), mount, spec], {
     env: { ...process.env, PYTHONPATH: library },
     stdio: 'inherit',
@@ -69,7 +69,7 @@ export function styleDmg(dmg) {
         set bounds to {100, 100, ${100 + layout.windowSize.width}, ${100 + layout.windowSize.height}}
       end tell
       set opts to icon view options of front window
-      set icon size of opts to 64
+      set icon size of opts to 128
       set text size of opts to 12
       set position of item "Trident.app" of targetFolder to {${layout.appPosition.x}, ${layout.appPosition.y}}
       set position of item "Applications" of targetFolder to {${layout.applicationFolderPosition.x}, ${layout.applicationFolderPosition.y}}
