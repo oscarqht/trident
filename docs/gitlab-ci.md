@@ -65,7 +65,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib updater_auth
 glab ci lint .gitlab-ci.yml --include-jobs
 ```
 
-Tests use disposable local Git remotes and a mock GitLab server. Credential tests verify bridge authorization, exact-server matching, and missing/unavailable keychain behavior. They cover atomic pushes, retries, tag/version resolution, architecture-aware asset collection, internal updater URLs, missing signatures, upload failure, and creating/updating releases. A passing lint/test run does not prove native builds, signing credentials, runner availability, or live publication.
+Tests use disposable local Git remotes and a mock GitLab server. Credential tests verify bridge authorization, exact-server matching, and missing/unavailable keychain behavior. The macOS build also runs the Rust library tests before bundling, including a cold-start credential request before the updater initializes TLS. This catches the missing crypto provider panic that otherwise aborts the release app during its first background update check. Tests also cover atomic pushes, retries, tag/version resolution, architecture-aware asset collection, internal updater URLs, missing signatures, upload failure, and creating/updating releases. A passing lint/test run does not prove native builds, signing credentials, runner availability, or live publication.
 
 ## Signing failures
 

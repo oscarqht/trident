@@ -35,6 +35,18 @@ fn needs_gitlab_credentials(endpoints: &[Url]) -> Result<bool, String> {
     Ok(internal)
 }
 
+fn credentials_client() -> Result<reqwest::Client, reqwest::Error> {
+    // The updater enables reqwest's rustls-no-provider feature, but only installs
+    // ring during Updater::check. Our credential request happens before that.
+    // An existing process-wide provider is also valid; installation is idempotent.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+}
+
 pub async fn get_updater(app: &AppHandle) -> Result<Updater, String> {
     let endpoints = app
         .config()
@@ -57,11 +69,7 @@ pub async fn get_updater(app: &AppHandle) -> Result<Updater, String> {
         let connection = app
             .try_state::<ServerConnection>()
             .ok_or("Desktop update credentials are not ready. Please try again.")?;
-        let response = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_secs(5))
-            .build()
+        let response = credentials_client()
             .map_err(|_| "Could not initialize update credentials connection.")?
             .get(format!(
                 "{}/api/internal/updater-credentials",
@@ -105,6 +113,37 @@ pub async fn get_updater(app: &AppHandle) -> Result<Updater, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn credentials_client_works_before_updater_initializes_tls() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        // The credential bridge is contacted before Updater::check installs its
+        // Rustls provider. Constructing our client must work in a fresh process.
+        let client = credentials_client().expect("credential client initializes without updater");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0; 1024];
+            while !request.ends_with(b"\r\n\r\n") {
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert!(count > 0);
+                request.extend_from_slice(&buffer[..count]);
+            }
+            let request = String::from_utf8(request).unwrap();
+            assert!(request.starts_with("GET /api/internal/updater-credentials HTTP/1.1\r\n"));
+            assert!(request.to_ascii_lowercase().contains("x-trident-token: test-secret\r\n"));
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").await.unwrap();
+        });
+        let response = client
+            .get(format!("http://{address}/api/internal/updater-credentials"))
+            .header("X-Trident-Token", "test-secret")
+            .send().await.unwrap();
+        assert_eq!(response.json::<serde_json::Value>().await.unwrap(), serde_json::json!({}));
+        server.await.unwrap();
+    }
 
     #[test]
     fn credentials_are_limited_to_https_gitlab_origin() {
