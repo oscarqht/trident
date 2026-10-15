@@ -120,6 +120,7 @@ async function build(platform) {
   run('rustup', ['target', 'add', target]);
   run('npm', ['ci']);
   run('npm', ['run', 'build']);
+  run('cargo', ['test', '--manifest-path', 'src-tauri/Cargo.toml', '--lib']);
   const config = generateTauriConfig(env);
   fs.writeFileSync('gitlab-tauri.conf.json', JSON.stringify(config));
   withSigningKeychain(env, signingEnv => {
