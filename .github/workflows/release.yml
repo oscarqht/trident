@@ -89,14 +89,6 @@ jobs:
             arch: aarch64
             targets: aarch64-apple-darwin
             args: '--target aarch64-apple-darwin'
-          - platform: windows-latest
-            arch: x64
-            targets: ''
-            args: ''
-          - platform: ubuntu-22.04
-            arch: x86_64
-            targets: ''
-            args: ''
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
@@ -120,19 +112,6 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libssl-dev \
-            zstd \
-            binutils
 
       - name: Install dependencies
         run: npm ci
@@ -160,13 +139,6 @@ jobs:
           includeUpdaterJson: false
           retryAttempts: 3
           args: ${{ matrix.args }}
-
-      - name: Build and Upload Arch Linux package (.pkg.tar.zst)
-        if: runner.os == 'Linux'
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          node scripts/package-arch.mjs "${{ needs.prepare.outputs.tag }}"
 
   publish:
     name: Publish Release

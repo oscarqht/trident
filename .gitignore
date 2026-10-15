@@ -59,4 +59,3 @@ src-tauri/*.key.pub
 /latest.json
 /gitlab-tauri.conf.json
 /release-assets/
-/trident-*.pkg.tar.zst

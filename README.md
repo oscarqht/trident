@@ -85,7 +85,7 @@ A modern, web-based Git client built with Next.js. Manage your repositories, vie
 - [x] Delete remote tag
 - [x] Manage credentials (GitHub/GitLab) and associate per repository
 - [x] Run repository custom bash scripts from branch context menu (with live output/cancel)
-- [x] Automated release tagging on main PR merge and npm publish on release tags
+- [x] Automated version tagging, macOS builds, and release publication through GitLab CI
 
 #### UX & Reliability
 - [x] Dark/light/system theme toggle
@@ -214,29 +214,12 @@ src/
 
 GitLab CI owns automated desktop releases. See [GitLab release setup](docs/gitlab-ci.md) for runners, signing keys, permissions, and retries. GitHub Actions remains available for manually publishing an existing tag.
 
-1. When a new release tag is pushed (`v*`), or on a push/manual pipeline on `main`, the GitLab pipeline builds and packages native desktop bundles for:
-   - **macOS**: Apple Silicon `.dmg` & `.app.tar.gz`
-   - **Windows**: `.exe` (NSIS setup) & `.msi`
-   - **Linux**:
-     - `.AppImage` (standalone portable Linux executable)
-     - `.deb` (Debian / Ubuntu)
-     - `.pkg.tar.zst` (native Arch Linux / Omarchy Linux package)
-2. Generates the unified updater manifest `latest.json` for in-app updates across macOS, Windows, and Linux.
+1. A push or manual pipeline on `main` prepares a version and tag; an existing `vMAJOR.MINOR.PATCH` tag can also be rebuilt.
+2. The Mac Mini runner builds **macOS Apple Silicon** `.dmg` and signed `.app.tar.gz` bundles.
+3. GitLab publishes the installers and `latest.json` to its Package Registry and creates a release.
+4. The desktop app checks GitLab for updates using the saved `https://git.insea.io` account from **Credentials**. Its token needs `api` scope and access to this project and its packages.
 
-### Installing on Omarchy / Arch Linux
-
-Download `trident-<version>-1-x86_64.pkg.tar.zst` from the GitLab release and install with `pacman`:
-
-```bash
-sudo pacman -U trident-<version>-1-x86_64.pkg.tar.zst
-```
-
-Alternatively, run the portable `.AppImage`:
-
-```bash
-chmod +x Trident_<version>_amd64.AppImage
-./Trident_<version>_amd64.AppImage
-```
+Windows and Linux desktop builds are no longer part of the release workflow. Older installed builds still check GitHub; install a new GitLab-built version once to switch update sources.
 
 ## License
 

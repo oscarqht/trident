@@ -1,6 +1,7 @@
 mod server;
 mod tray;
 mod updater;
+mod updater_auth;
 
 use tauri::RunEvent;
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
