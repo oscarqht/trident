@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateCredentials, verifyAndNotarize, verifyUpdaterKeyMatch, signNativeResources, runStapler, run } from './macos-release.mjs';
+import { validateCredentials, verifyAndNotarize, verifyUpdaterKeyMatch, signNativeResources, withSigningKeychain, updateSigningKeychainSearchList, runStapler, run } from './macos-release.mjs';
 
 const env = {
   APPLE_CERTIFICATE: 'base64-p12', APPLE_CERTIFICATE_PASSWORD: 'certificate-password',
@@ -131,13 +131,14 @@ test('signs native modules and Mach-O binaries before the outer app is sealed', 
   const module = path.join(root, 'keytar/keytar.node');
   fs.writeFileSync(module, Buffer.from('cffaedfe01020304', 'hex'));
   fs.writeFileSync(path.join(root, 'server.js'), 'console.log("server")');
+  const signingEnv = { ...env, TRIDENT_SIGNING_KEYCHAIN: '/tmp/job-specific.keychain-db' };
   const calls = [];
-  assert.deepEqual(signNativeResources(root, env, (command, args) => { calls.push([command, ...args]); }), [module]);
-  assert.deepEqual(calls, [
-    ['codesign', '--force', '--timestamp', '--options', 'runtime', '--sign', env.APPLE_SIGNING_IDENTITY, module],
+  assert.deepEqual(signNativeResources(root, signingEnv, (command, args) => { calls.push([command, ...args]); return args[0] === 'list-keychains' ? `"${signingEnv.TRIDENT_SIGNING_KEYCHAIN}"` : ''; }), [module]);
+  assert.deepEqual(calls.filter(call => call[0] === 'codesign'), [
+    ['codesign', '--force', '--timestamp', '--options', 'runtime', '--keychain', signingEnv.TRIDENT_SIGNING_KEYCHAIN, '--sign', env.APPLE_SIGNING_IDENTITY, module],
     ['codesign', '--verify', '--strict', '--verbose=2', module],
   ]);
-  assert.throws(() => signNativeResources(root, env, () => { throw new Error('nested signature failed'); }), /nested signature failed/);
+  assert.throws(() => signNativeResources(root, signingEnv, () => { throw new Error('nested signature failed'); }), /nested signature failed/);
 });
 
 
@@ -187,4 +188,75 @@ test('app ticket validation also recovers from a transient Apple timeout', () =>
   }, () => {});
   assert.equal(attempts, 2);
   assert.equal(result, 'The validate action worked!');
+});
+
+
+test('job keychain is checked explicitly and deleted without restoring a stale search-list snapshot', () => {
+  const calls = [];
+  let keychain;
+  const result = withSigningKeychain(env, signingEnv => {
+    keychain = signingEnv.TRIDENT_SIGNING_KEYCHAIN;
+    assert.ok(fs.existsSync(path.join(path.dirname(keychain), 'certificate.p12')));
+    return 'signed';
+  }, (command, args) => {
+    calls.push([command, ...args]);
+    return args[0] === 'find-identity' ? `1) HASH "${env.APPLE_SIGNING_IDENTITY}"` : '';
+  });
+  assert.equal(result, 'signed');
+  assert.ok(calls.some(call => call[1] === 'find-identity' && call.at(-1) === keychain));
+  assert.ok(calls.some(call => call[1] === 'list-keychains'));
+  assert.deepEqual(calls.at(-1), ['security', 'delete-keychain', keychain]);
+  assert.equal(fs.existsSync(path.dirname(keychain)), false);
+});
+
+test('missing identity fails before compilation and cleans the temporary keychain', () => {
+  const calls = [];
+  assert.throws(() => withSigningKeychain(env, () => assert.fail('must not build without identity'), (command, args) => {
+    calls.push([command, ...args]);
+    return '0 valid identities found';
+  }), /does not contain/);
+  assert.equal(calls.at(-1)[1], 'delete-keychain');
+  assert.equal(fs.existsSync(path.dirname(calls.at(-1).at(-1))), false);
+});
+
+test('build failure still removes only its own temporary keychain', () => {
+  const calls = [];
+  assert.throws(() => withSigningKeychain(env, () => { throw new Error('build failed'); }, (command, args) => {
+    calls.push([command, ...args]);
+    return args[0] === 'find-identity' ? `"${env.APPLE_SIGNING_IDENTITY}"` : '';
+  }), /build failed/);
+  assert.equal(calls.at(-1)[1], 'delete-keychain');
+  assert.ok(calls.some(call => call[1] === 'list-keychains'));
+});
+
+
+test('a leaf-only p12 becomes usable after adding Apple intermediate certificates to its own keychain', () => {
+  const calls = [];
+  let checks = 0;
+  withSigningKeychain(env, signingEnv => {
+    assert.ok(signingEnv.TRIDENT_SIGNING_KEYCHAIN);
+  }, (command, args) => {
+    calls.push([command, ...args]);
+    if (args[0] === 'find-identity') return ++checks === 1 ? '0 valid identities found' : `"${env.APPLE_SIGNING_IDENTITY}"`;
+    if (args[0] === 'add-certificates') assert.ok(fs.existsSync(args.at(-1)));
+    return '';
+  });
+  assert.equal(checks, 2);
+  const added = calls.filter(call => call[1] === 'add-certificates');
+  assert.equal(added.length, 2);
+  assert.ok(added.every(call => call[2] === '-k' && call[3] === calls.at(-1).at(-1)));
+});
+
+
+test('keychain registration and cleanup preserve unrelated current keychains', () => {
+  let searchList = ['/tmp/login.keychain-db'];
+  const execute = (command, args) => {
+    if (args.includes('-s')) searchList = args.slice(args.indexOf('-s') + 1);
+    return searchList.map(filename => `"${filename}"`).join('\n');
+  };
+  updateSigningKeychainSearchList('/tmp/trident.keychain-db', true, execute);
+  assert.deepEqual(searchList, ['/tmp/trident.keychain-db', '/tmp/login.keychain-db']);
+  searchList.push('/tmp/another-job.keychain-db');
+  updateSigningKeychainSearchList('/tmp/trident.keychain-db', false, execute);
+  assert.deepEqual(searchList, ['/tmp/login.keychain-db', '/tmp/another-job.keychain-db']);
 });

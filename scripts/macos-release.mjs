@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 export function validateCredentials(env) {
   const required = ['APPLE_CERTIFICATE', 'APPLE_CERTIFICATE_PASSWORD', 'APPLE_SIGNING_IDENTITY', 'APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID'];
@@ -14,7 +16,9 @@ export function validateCredentials(env) {
 
 export function run(command, args, spawn = spawnSync) {
   const result = spawn(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 35 * 60 * 1000 });
-  const secrets = [args.includes('--password') ? args[args.indexOf('--password') + 1] : undefined, process.env.APPLE_PASSWORD,
+  const securityPasswords = command === 'security'
+    ? args.flatMap((argument, index) => ['-p', '-P'].includes(argument) || (args[0] === 'set-key-partition-list' && argument === '-k') ? [args[index + 1]] : []) : [];
+  const secrets = [...securityPasswords, args.includes('--password') ? args[args.indexOf('--password') + 1] : undefined, process.env.APPLE_PASSWORD,
     process.env.APPLE_CERTIFICATE_PASSWORD, process.env.APPLE_CERTIFICATE, process.env.GH_TOKEN, process.env.GITHUB_TOKEN]
     .filter(Boolean);
   const redact = output => secrets.reduce((text, secret) => text.replaceAll(secret, '[REDACTED]'), output || '');
@@ -90,9 +94,65 @@ export function verifyAndNotarize(app, dmg, env, execute = run, sleep = sleepSyn
   execute('spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose=2', dmg]);
 }
 
+// codesign still requires the identity keychain on the search list even with --keychain.
+export function updateSigningKeychainSearchList(keychain, include, execute = run) {
+  const output = execute('security', ['list-keychains', '-d', 'user']);
+  const current = [...output.matchAll(/"([^"\n]+)"/g)].map(match => match[1]);
+  const canonical = filename => { try { return fs.realpathSync(filename); } catch { return filename; } };
+  const same = filename => canonical(filename) === canonical(keychain);
+  const next = current.filter(filename => !same(filename));
+  if (include) next.unshift(keychain);
+  if (JSON.stringify(current) !== JSON.stringify(next)) {
+    execute('security', ['list-keychains', '-d', 'user', '-s', ...next]);
+  }
+}
+
+// Use an explicit identity keychain, and preserve unrelated jobs when updating the search list.
+export function withSigningKeychain(env, callback, execute = run) {
+  validateCredentials(env);
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'trident-signing-'));
+  const keychain = path.join(directory, 'build.keychain-db');
+  const certificate = path.join(directory, 'certificate.p12');
+  const password = randomBytes(32).toString('hex');
+  let created = false;
+  try {
+    fs.writeFileSync(certificate, Buffer.from(env.APPLE_CERTIFICATE, 'base64'), { mode: 0o600 });
+    execute('security', ['create-keychain', '-p', password, keychain]);
+    created = true;
+    execute('security', ['set-keychain-settings', '-lut', '21600', keychain]);
+    execute('security', ['unlock-keychain', '-p', password, keychain]);
+    execute('security', ['import', certificate, '-k', keychain, '-P', env.APPLE_CERTIFICATE_PASSWORD, '-T', '/usr/bin/codesign']);
+    execute('security', ['set-key-partition-list', '-S', 'apple-tool:,apple:,codesign:', '-s', '-k', password, keychain]);
+    updateSigningKeychainSearchList(keychain, true, execute);
+    const findIdentities = () => execute('security', ['find-identity', '-v', '-p', 'codesigning', keychain]);
+    let identities = findIdentities();
+    if (!identities.includes(`"${env.APPLE_SIGNING_IDENTITY}"`)) {
+      // A .p12 may contain only the leaf certificate and private key. The issuing
+      // Developer ID intermediate must also be available to build a trusted chain.
+      for (const name of ['DeveloperIDCA.cer', 'DeveloperIDG2CA.cer']) {
+        execute('security', ['add-certificates', '-k', keychain, fileURLToPath(new URL(`./certificates/${name}`, import.meta.url))]);
+      }
+      identities = findIdentities();
+    }
+    if (!identities.includes(`"${env.APPLE_SIGNING_IDENTITY}"`)) {
+      throw new Error('The imported keychain does not contain the configured valid Developer ID signing identity.');
+    }
+    return callback({ ...env, TRIDENT_SIGNING_KEYCHAIN: keychain });
+  } finally {
+    try {
+      if (created) {
+        try { updateSigningKeychainSearchList(keychain, false, execute); }
+        finally { execute('security', ['delete-keychain', keychain]); }
+      }
+    } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+  }
+}
+
 // Native Node modules live in Resources, where signing the outer app alone does not sign them.
 export function signNativeResources(root, env, execute = run) {
   validateCredentials(env);
+  if (!env.TRIDENT_SIGNING_KEYCHAIN) throw new Error('Native resource signing requires the job signing keychain.');
+  updateSigningKeychainSearchList(env.TRIDENT_SIGNING_KEYCHAIN, true, execute);
   const signed = [];
   const walk = directory => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -104,7 +164,7 @@ export function signNativeResources(root, env, execute = run) {
         try { fs.readSync(descriptor, magic, 0, 4, 0); }
         finally { fs.closeSync(descriptor); }
         if (!['feedface', 'cefaedfe', 'feedfacf', 'cffaedfe', 'cafebabe', 'bebafeca', 'cafebabf', 'bfbafeca'].includes(magic.toString('hex'))) continue;
-        execute('codesign', ['--force', '--timestamp', '--options', 'runtime', '--sign', env.APPLE_SIGNING_IDENTITY, filename]);
+        execute('codesign', ['--force', '--timestamp', '--options', 'runtime', '--keychain', env.TRIDENT_SIGNING_KEYCHAIN, '--sign', env.APPLE_SIGNING_IDENTITY, filename]);
         execute('codesign', ['--verify', '--strict', '--verbose=2', filename]);
         signed.push(filename);
       }
@@ -140,7 +200,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (process.argv[2] === 'validate') {
     console.log('Apple signing and notarization credentials are configured.');
   } else if (process.argv[2] === 'sign-resources') {
-    const signed = signNativeResources('.next/standalone', process.env);
+    const sign = signingEnv => signNativeResources('.next/standalone', signingEnv);
+    const signed = process.env.TRIDENT_SIGNING_KEYCHAIN ? sign(process.env) : withSigningKeychain(process.env, sign);
     console.log(`Signed and verified ${signed.length} bundled native code files.`);
   } else if (process.argv[2] === 'prepare') {
     fs.writeFileSync('src-tauri/tauri.macos.release.json', JSON.stringify({ build: { beforeBundleCommand: 'node scripts/macos-release.mjs sign-resources' }, bundle: { macOS: {

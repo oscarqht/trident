@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { validateCredentials, verifyReleaseBundle } from './macos-release.mjs';
+import { validateCredentials, verifyReleaseBundle, withSigningKeychain } from './macos-release.mjs';
 
 const env = process.env;
 const run = (command, args, options = {}) => {
@@ -123,36 +122,14 @@ async function build(platform) {
   run('npm', ['run', 'build']);
   const config = generateTauriConfig(env);
   fs.writeFileSync('gitlab-tauri.conf.json', JSON.stringify(config));
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'trident-signing-'));
-  const keychain = path.join(temporary, 'build.keychain-db');
-  let oldKeychains;
-  try {
-    if (process.platform === 'darwin' && env.APPLE_CERTIFICATE) {
-      if (!env.APPLE_SIGNING_IDENTITY || !env.APPLE_CERTIFICATE_PASSWORD) throw new Error('Apple certificate password and signing identity are required');
-      oldKeychains = execFileSync('security', ['list-keychains', '-d', 'user'], { encoding: 'utf8' }).match(/"[^"]+"/g)?.map((s) => s.slice(1, -1)) || [];
-      const password = randomBytes(32).toString('hex');
-      const certificate = path.join(temporary, 'certificate.p12');
-      fs.writeFileSync(certificate, Buffer.from(env.APPLE_CERTIFICATE, 'base64'), { mode: 0o600 });
-      run('security', ['create-keychain', '-p', password, keychain]);
-      run('security', ['set-keychain-settings', '-lut', '21600', keychain]);
-      run('security', ['unlock-keychain', '-p', password, keychain]);
-      run('security', ['import', certificate, '-k', keychain, '-P', env.APPLE_CERTIFICATE_PASSWORD, '-T', '/usr/bin/codesign']);
-      run('security', ['set-key-partition-list', '-S', 'apple-tool:,apple:,codesign:', '-s', '-k', password, keychain]);
-      run('security', ['list-keychains', '-d', 'user', '-s', keychain, ...oldKeychains]);
-    }
-    run(process.execPath, getTauriBuildArgs(platform, target));
+  withSigningKeychain(env, signingEnv => {
+    run(process.execPath, getTauriBuildArgs(platform, target), { env: signingEnv });
     const bundle = `src-tauri/target/${target}/release/bundle`;
     verifyReleaseBundle(bundle, env);
     const destination = `release-assets/${platform}`;
     collectAssets(bundle, destination, platform);
     if (!fs.readdirSync(destination).some((name) => name.endsWith('.sig'))) throw new Error('Build did not produce signed updater artifacts');
-  } finally {
-    if (oldKeychains) {
-      run('security', ['list-keychains', '-d', 'user', '-s', ...oldKeychains]);
-      run('security', ['delete-keychain', keychain]);
-    }
-    fs.rmSync(temporary, { recursive: true, force: true });
-  }
+  });
 }
 
 async function publish() {
