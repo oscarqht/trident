@@ -30,7 +30,25 @@ export function run(command, args, spawn = spawnSync) {
   return command === 'codesign' && args[0] === '--display' ? stdout + stderr : stdout;
 }
 
-export function verifyAndNotarize(app, dmg, env, execute = run) {
+const sleepSync = milliseconds => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+
+export function runStapler(action, target, execute = run, sleep = sleepSync) {
+  const delays = [5000, 15000];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return execute('xcrun', ['stapler', action, target]);
+    } catch (error) {
+      // Exit 68 also covers permanent failures; retry only explicit network diagnostics.
+      const diagnostics = [error.message, error.stdout, error.stderr].filter(Boolean).join('\n');
+      const transient = /NSURLErrorDomain[\s\S]*?Code=-(?:1001|1003|1004|1005|1006|1009)\b/.test(diagnostics);
+      if (!transient || attempt >= delays.length) throw error;
+      console.warn(`Apple stapler ${action} lost its network connection; retrying in ${delays[attempt] / 1000}s (${attempt + 2}/3).`);
+      sleep(delays[attempt]);
+    }
+  }
+}
+
+export function verifyAndNotarize(app, dmg, env, execute = run, sleep = sleepSync) {
   validateCredentials(env);
   execute('codesign', ['--verify', '--deep', '--strict', '--verbose=2', app]);
   const details = execute('codesign', ['--display', '--verbose=4', app]);
@@ -38,7 +56,7 @@ export function verifyAndNotarize(app, dmg, env, execute = run) {
       !details.includes(`TeamIdentifier=${env.APPLE_TEAM_ID}`) || !/flags=.*\bruntime\b/.test(details)) {
     throw new Error('App must have the expected Developer ID, team, and hardened runtime');
   }
-  execute('xcrun', ['stapler', 'validate', app]);
+  runStapler('validate', app, execute, sleep);
   execute('spctl', ['--assess', '--type', 'execute', '--verbose=2', app]);
   execute('codesign', ['--verify', '--strict', '--verbose=2', dmg]);
   const dmgDetails = execute('codesign', ['--display', '--verbose=4', dmg]);
@@ -67,8 +85,8 @@ export function verifyAndNotarize(app, dmg, env, execute = run) {
     throw error;
   }
   if (result.status !== 'Accepted') throw rejection(result, 'DMG notarization was not accepted');
-  execute('xcrun', ['stapler', 'staple', dmg]);
-  execute('xcrun', ['stapler', 'validate', dmg]);
+  runStapler('staple', dmg, execute, sleep);
+  runStapler('validate', dmg, execute, sleep);
   execute('spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose=2', dmg]);
 }
 
