@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateCredentials, verifyAndNotarize, verifyUpdaterKeyMatch, signNativeResources, run } from './macos-release.mjs';
+import { validateCredentials, verifyAndNotarize, verifyUpdaterKeyMatch, signNativeResources, runStapler, run } from './macos-release.mjs';
 
 const env = {
   APPLE_CERTIFICATE: 'base64-p12', APPLE_CERTIFICATE_PASSWORD: 'certificate-password',
@@ -138,4 +138,53 @@ test('signs native modules and Mach-O binaries before the outer app is sealed', 
     ['codesign', '--verify', '--strict', '--verbose=2', module],
   ]);
   assert.throws(() => signNativeResources(root, env, () => { throw new Error('nested signature failed'); }), /nested signature failed/);
+});
+
+
+test('retries a lost Apple CloudKit connection during DMG stapling without resubmitting notarization', () => {
+  const calls = [];
+  const sleeps = [];
+  const fake = fakeRunner(calls);
+  let attempts = 0;
+  verifyAndNotarize('app', 'dmg', env, (command, args) => {
+    if (args[0] === 'stapler' && args[1] === 'staple' && ++attempts === 1) {
+      calls.push([command, ...args]);
+      throw new Error('xcrun stapler failed (exit 68). NSURLErrorDomain Code=-1005 "The network connection was lost."');
+    }
+    return fake(command, args);
+  }, milliseconds => sleeps.push(milliseconds));
+  assert.equal(attempts, 2);
+  assert.deepEqual(sleeps, [5000]);
+  assert.equal(calls.filter(call => call[1] === 'notarytool' && call[2] === 'submit').length, 1);
+  assert.ok(calls.at(-1).includes('context:primary-signature'));
+});
+
+test('stapler retries stop after three transient failures and retain Apple diagnostics', () => {
+  const sleeps = [];
+  let attempts = 0;
+  assert.throws(() => runStapler('staple', 'dmg', () => {
+    attempts++;
+    throw new Error('NSURLErrorDomain Code=-1005 "The network connection was lost."');
+  }, milliseconds => sleeps.push(milliseconds)), /Code=-1005/);
+  assert.equal(attempts, 3);
+  assert.deepEqual(sleeps, [5000, 15000]);
+});
+
+test('stapler does not retry permanent ticket or validation failures', () => {
+  let attempts = 0;
+  assert.throws(() => runStapler('validate', 'app', () => {
+    attempts++;
+    throw new Error('The staple and validate action failed! Error 65. Ticket is invalid.');
+  }, () => assert.fail('permanent errors must not wait')), /Ticket is invalid/);
+  assert.equal(attempts, 1);
+});
+
+test('app ticket validation also recovers from a transient Apple timeout', () => {
+  let attempts = 0;
+  const result = runStapler('validate', 'app', () => {
+    if (++attempts === 1) throw new Error('NSURLErrorDomain Code=-1001 "The request timed out."');
+    return 'The validate action worked!';
+  }, () => {});
+  assert.equal(attempts, 2);
+  assert.equal(result, 'The validate action worked!');
 });
