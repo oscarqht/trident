@@ -415,7 +415,9 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
     let watchdog_path = ensure_watchdog_script()?;
     let parent_pid = std::process::id();
 
+    let connection = crate::updater_auth::ServerConnection::new(format!("http://{}:{port}", client_host(&host)))?;
     let mut cmd = std::process::Command::new(&node_bin);
+    cmd.env("TRIDENT_INTERNAL_TOKEN", &connection.token);
 
     // Keep stdin piped: when the Tauri GUI app terminates (by any means, including crash or SIGKILL),
     // the OS kernel closes the pipe, immediately sending EOF to the child Node process.
@@ -512,6 +514,7 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
         .spawn()
         .map_err(|e| format!("Failed to spawn Next.js process with Node ({:?}): {e}", node_bin))?;
 
+    app.manage(connection);
     let pid = child.id();
     {
         let mut running = SERVER_PROCESS.lock().unwrap_or_else(|e| e.into_inner());

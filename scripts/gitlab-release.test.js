@@ -97,7 +97,7 @@ async function publicationFixture(t) {
   fs.copyFileSync(path.join(scriptDir, 'generate-updater-json.js'), path.join(directory, 'scripts/generate-updater-json.js'));
   fs.writeFileSync(path.join(directory, 'package.json'), '{}');
   fs.writeFileSync(path.join(directory, 'changelog.txt'), '- New feature\n');
-  const bundles = { 'darwin-aarch64': 'Trident_aarch64.app.tar.gz', 'windows-x86_64': 'Trident_1.2.0_x64-setup.exe', 'linux-x86_64': 'Trident_1.2.0_amd64.AppImage' };
+  const bundles = { 'darwin-aarch64': 'Trident_aarch64.app.tar.gz' };
   for (const [platform, name] of Object.entries(bundles)) {
     const folder = path.join(directory, 'release-assets', platform);
     fs.mkdirSync(folder, { recursive: true });
@@ -146,7 +146,7 @@ test('publication uploads signed manifest before creating release and retries ex
   assert.ok(body.assets.links.some((link) => link.direct_asset_path === '/latest.json'));
   const uploaded = f.requests.find((req) => req.url.endsWith('/latest.json'));
   const manifest = JSON.parse(uploaded.data);
-  for (const platform of ['darwin-aarch64', 'windows-x86_64', 'linux-x86_64']) {
+  for (const platform of ['darwin-aarch64']) {
     assert.equal(manifest.platforms[platform].signature, `signed-${platform}`);
     assert.ok(manifest.platforms[platform].url.startsWith(`${f.url}/api/v4/projects/42/packages/generic/trident/1.2.0/`));
     assert.ok(!manifest.platforms[platform].url.includes(' '));
@@ -172,10 +172,10 @@ test('upload failure prevents release publication', async (t) => {
 
 test('missing platform signature prevents any upload', async (t) => {
   const f = await publicationFixture(t);
-  fs.rmSync(path.join(f.directory, 'release-assets/windows-x86_64/Trident_1.2.0_x64-setup.exe.sig'));
+  fs.rmSync(path.join(f.directory, 'release-assets/darwin-aarch64/Trident_aarch64.app.tar.gz.sig'));
   const result = await f.execute();
   assert.notEqual(result.status, 0);
-  assert.match(result.output, /Missing updater platform: windows-x86_64/);
+  assert.match(result.output, /No updater signatures found/);
   assert.equal(f.requests.length, 0);
 });
 
@@ -183,7 +183,7 @@ test('generateTauriConfig inherits the application updater endpoint and supports
   const defaultConfig = generateTauriConfig({ CI_PROJECT_URL: 'https://gitlab.example.com/org/repo' });
   assert.equal(defaultConfig.plugins?.updater?.endpoints, undefined, 'Default builds inherit the repository updater configuration');
   const config = JSON.parse(fs.readFileSync(path.join(scriptDir, '../src-tauri/tauri.conf.json'), 'utf8'));
-  assert.deepEqual(config.plugins.updater.endpoints, ['https://github.com/oscarqht/trident/releases/latest/download/latest.json']);
+  assert.deepEqual(config.plugins.updater.endpoints, ['https://git.insea.io/api/v4/projects/alpha%2Fprojects%2Fchatgpt%2Ftrident/releases/permalink/latest/downloads/latest.json']);
 
   const customConfig = generateTauriConfig({ UPDATER_ENDPOINTS: 'https://github.com/custom/repo/releases/latest/download/latest.json' });
   assert.deepEqual(customConfig.plugins.updater.endpoints, ['https://github.com/custom/repo/releases/latest/download/latest.json']);
@@ -192,11 +192,12 @@ test('generateTauriConfig inherits the application updater endpoint and supports
   assert.equal(signingConfig.bundle.macOS.signingIdentity, 'Developer ID');
   assert.equal(signingConfig.bundle.macOS.hardenedRuntime, true);
 
-  assert.throws(() => getTauriBuildArgs('windows-x86_64', 'x86_64-pc-windows-msvc', 'linux'), /Windows runner/);
-  assert.throws(() => getTauriBuildArgs('windows-x86_64', 'x86_64-pc-windows-msvc', 'darwin'), /Windows runner/);
+  assert.throws(() => getTauriBuildArgs('windows-x86_64', 'x86_64-pc-windows-msvc', 'win32'), /Unsupported release platform/);
+  assert.throws(() => getTauriBuildArgs('linux-x86_64', 'x86_64-unknown-linux-gnu', 'linux'), /Unsupported release platform/);
+  assert.throws(() => getTauriBuildArgs('darwin-aarch64', 'aarch64-apple-darwin', 'linux'), /macOS runner/);
   assert.deepEqual(
-    getTauriBuildArgs('windows-x86_64', 'x86_64-pc-windows-msvc', 'win32'),
-    ['node_modules/@tauri-apps/cli/tauri.js', 'build', '--target', 'x86_64-pc-windows-msvc', '--config', 'gitlab-tauri.conf.json'],
+    getTauriBuildArgs('darwin-aarch64', 'aarch64-apple-darwin', 'darwin'),
+    ['node_modules/@tauri-apps/cli/tauri.js', 'build', '--target', 'aarch64-apple-darwin', '--config', 'gitlab-tauri.conf.json'],
   );
 });
 
@@ -205,7 +206,7 @@ test('generateTauriConfig inherits the application updater endpoint and supports
 test('publication accepts imported flat assets and regenerates internal updater URLs', async (t) => {
   const f = await publicationFixture(t);
   const imported = path.join(f.directory, 'imported');
-  for (const platform of ['darwin-aarch64', 'windows-x86_64', 'linux-x86_64']) {
+  for (const platform of ['darwin-aarch64']) {
     collectAssets(path.join(f.directory, 'release-assets', platform), imported, 'published');
   }
   fs.writeFileSync(path.join(imported, 'latest.json'), '{"platforms":{"github":"external"}}');

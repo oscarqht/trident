@@ -111,40 +111,6 @@ for (const sigAsset of sigFiles) {
       }
     }
   }
-
-  // Windows NSIS (setup.exe)
-  if (targetAssetName.endsWith('-setup.exe') || targetAssetName.endsWith('.nsis.zip')) {
-    if (targetAssetName.includes('x64') || targetAssetName.includes('x86_64')) {
-      platforms['windows-x86_64'] = { signature, url: downloadUrl };
-      platforms['windows-x86_64-nsis'] = { signature, url: downloadUrl };
-    } else if (targetAssetName.includes('x86') || targetAssetName.includes('i686')) {
-      platforms['windows-i686'] = { signature, url: downloadUrl };
-      platforms['windows-i686-nsis'] = { signature, url: downloadUrl };
-    } else if (targetAssetName.includes('arm64') || targetAssetName.includes('aarch64')) {
-      platforms['windows-aarch64'] = { signature, url: downloadUrl };
-      platforms['windows-aarch64-nsis'] = { signature, url: downloadUrl };
-    }
-  }
-
-  // Windows MSI (.msi)
-  if (targetAssetName.endsWith('.msi') || targetAssetName.endsWith('.msi.zip')) {
-    if (targetAssetName.includes('x64') || targetAssetName.includes('x86_64')) {
-      platforms['windows-x86_64-msi'] = { signature, url: downloadUrl };
-    } else if (targetAssetName.includes('x86') || targetAssetName.includes('i686')) {
-      platforms['windows-i686-msi'] = { signature, url: downloadUrl };
-    } else if (targetAssetName.includes('arm64') || targetAssetName.includes('aarch64')) {
-      platforms['windows-aarch64-msi'] = { signature, url: downloadUrl };
-    }
-  }
-
-  // Linux AppImage (.AppImage.tar.gz)
-  if (targetAssetName.endsWith('.AppImage.tar.gz') || targetAssetName.endsWith('.AppImage')) {
-    if (targetAssetName.includes('amd64') || targetAssetName.includes('x86_64')) {
-      platforms['linux-x86_64'] = { signature, url: downloadUrl };
-    } else if (targetAssetName.includes('aarch64') || targetAssetName.includes('arm64')) {
-      platforms['linux-aarch64'] = { signature, url: downloadUrl };
-    }
-  }
 }
 
 const latestJson = {

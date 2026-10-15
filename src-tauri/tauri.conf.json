@@ -12,7 +12,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app", "dmg"],
     "category": "DeveloperTool",
     "shortDescription": "A modern, web-based Git client",
     "longDescription": "A modern, web-based Git client.",
@@ -36,7 +36,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/oscarqht/trident/releases/latest/download/latest.json"
+        "https://git.insea.io/api/v4/projects/alpha%2Fprojects%2Fchatgpt%2Ftrident/releases/permalink/latest/downloads/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc5QTc3MTM0QTI5MzQ4MzIKUldReVNKT2lOSEduZVZOMUZ2Q1p6ZGo0VTRlUUxSbUVWWlNXbHVldmhuRlZGQUl3L3pZNHNYMmoK"
     }

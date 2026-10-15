@@ -25,9 +25,9 @@ export function collectAssets(bundleDir, destination, platform) {
   for (const entry of fs.readdirSync(bundleDir, { withFileTypes: true })) {
     const source = path.join(bundleDir, entry.name);
     if (entry.isDirectory()) {
-      // .app bundles and Arch extraction trees are not release assets.
-      if (!entry.name.endsWith('.app') && entry.name !== 'arch-pkg') collectAssets(source, destination, platform);
-    } else if (/\.(dmg|app\.tar\.gz|exe|msi|nsis\.zip|msi\.zip|AppImage|AppImage\.tar\.gz|deb|rpm|pkg\.tar\.zst)(\.sig)?$/.test(entry.name)) {
+      // The unpacked .app is distributed through its signed archive.
+      if (!entry.name.endsWith('.app')) collectAssets(source, destination, platform);
+    } else if (/\.(dmg|app\.tar\.gz)(\.sig)?$/.test(entry.name)) {
       const archName = platform === 'darwin-aarch64'
         ? entry.name.replace(/\.app\.tar\.gz/, '_aarch64.app.tar.gz') : entry.name;
       const name = archName.replace(/[^A-Za-z0-9._+-]/g, '_');
@@ -92,17 +92,17 @@ export function generateTauriConfig(customEnv = env) {
 }
 
 export function getTauriBuildArgs(platform, target, hostPlatform = process.platform) {
-  const args = ['node_modules/@tauri-apps/cli/tauri.js', 'build', '--target', target, '--config', 'gitlab-tauri.conf.json'];
-  if (platform === 'windows-x86_64' && hostPlatform !== 'win32') {
-    throw new Error('Windows bundles require a Windows runner for native Next.js dependencies');
+  if (platform !== 'darwin-aarch64' || target !== 'aarch64-apple-darwin') {
+    throw new Error(`Unsupported release platform: ${platform}`);
   }
-  return args;
+  if (hostPlatform !== 'darwin') throw new Error('macOS builds require a macOS runner');
+  return ['node_modules/@tauri-apps/cli/tauri.js', 'build', '--target', target, '--config', 'gitlab-tauri.conf.json'];
 }
 
 async function build(platform) {
   if (env.SHOULD_RELEASE === 'false') return;
   validateTag(env.RELEASE_TAG);
-  const targets = { 'darwin-aarch64': 'aarch64-apple-darwin', 'windows-x86_64': 'x86_64-pc-windows-msvc', 'linux-x86_64': 'x86_64-unknown-linux-gnu' };
+  const targets = { 'darwin-aarch64': 'aarch64-apple-darwin' };
   const target = targets[platform];
   if (!target) throw new Error(`Unsupported platform: ${platform}`);
   run('git', ['fetch', 'origin', `refs/tags/${env.RELEASE_TAG}:refs/tags/${env.RELEASE_TAG}`]);
@@ -116,8 +116,8 @@ async function build(platform) {
   run('rustup', ['toolchain', 'install', 'stable', '--profile', 'minimal']);
   run('rustup', ['default', 'stable']);
   run('rustup', ['target', 'add', target]);
-  run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['ci'], { shell: process.platform === 'win32' });
-  run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build'], { shell: process.platform === 'win32' });
+  run('npm', ['ci']);
+  run('npm', ['run', 'build']);
   const config = generateTauriConfig(env);
   fs.writeFileSync('gitlab-tauri.conf.json', JSON.stringify(config));
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'trident-signing-'));
@@ -139,12 +139,8 @@ async function build(platform) {
     }
     run(process.execPath, getTauriBuildArgs(platform, target));
     const bundle = `src-tauri/target/${target}/release/bundle`;
-    if (platform === 'linux-x86_64') {
-      node('package-arch.mjs', [env.RELEASE_TAG], { env: { ...env, ARCH_DEB_DIR: `${bundle}/deb`, GH_TOKEN: '', GITHUB_TOKEN: '' } });
-    }
     const destination = `release-assets/${platform}`;
     collectAssets(bundle, destination, platform);
-    if (platform === 'linux-x86_64') fs.copyFileSync(`trident-${version}-1-x86_64.pkg.tar.zst`, `${destination}/trident-${version}-1-x86_64.pkg.tar.zst`);
     if (!fs.readdirSync(destination).some((name) => name.endsWith('.sig'))) throw new Error('Build did not produce signed updater artifacts');
   } finally {
     if (oldKeychains) {
@@ -169,11 +165,11 @@ async function publish() {
   const assets = env.RELEASE_ASSETS_DIR || 'release-assets/all';
   if (!env.RELEASE_ASSETS_DIR) {
     fs.rmSync(assets, { recursive: true, force: true });
-    for (const platform of ['darwin-aarch64', 'windows-x86_64', 'linux-x86_64']) collectAssets(`release-assets/${platform}`, assets, 'published');
+    for (const platform of ['darwin-aarch64']) collectAssets(`release-assets/${platform}`, assets, 'published');
   }
   node('generate-updater-json.js', [tag], { env: { ...env, RELEASE_ASSETS_DIR: assets, RELEASE_ASSETS_BASE_URL: packageUrl } });
   const manifest = JSON.parse(fs.readFileSync('latest.json', 'utf8'));
-  for (const platform of ['darwin-aarch64', 'windows-x86_64', 'linux-x86_64']) {
+  for (const platform of ['darwin-aarch64']) {
     if (!manifest.platforms[platform]?.signature) throw new Error(`Missing updater platform: ${platform}`);
   }
   fs.copyFileSync('latest.json', `${assets}/latest.json`);

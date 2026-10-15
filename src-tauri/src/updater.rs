@@ -3,7 +3,7 @@ use std::time::Duration;
 use tauri::menu::MenuItem;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
 use tauri_plugin_notification::NotificationExt;
-use tauri_plugin_updater::{Update, UpdaterExt};
+use tauri_plugin_updater::Update;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(tag = "status", content = "data")]
@@ -114,7 +114,7 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
     }
     let _ = app.emit("trident://update-status", UpdateStatus::Checking);
 
-    let updater = match app.updater() {
+    let updater = match crate::updater_auth::get_updater(app).await {
         Ok(u) => u,
         Err(e) => {
             let err_msg = format!("Failed to initialize updater: {e}");
@@ -133,6 +133,16 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
     println!("[trident] Checking for updates...");
     match updater.check().await {
         Ok(Some(update)) => {
+            if update.headers.contains_key("PRIVATE-TOKEN")
+                && !crate::updater_auth::is_gitlab_url(&update.download_url)
+            {
+                let status = UpdateStatus::Error { message: "Update download must stay on https://git.insea.io.".into() };
+                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+                mgr.status = status.clone();
+                mgr.is_checking_or_downloading = false;
+                let _ = app.emit("trident://update-status", &status);
+                return;
+            }
             println!("[trident] New version available: v{}", update.version);
             let version = update.version.clone();
             let current_version = update.current_version.clone();
