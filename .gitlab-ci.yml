@@ -48,6 +48,13 @@ build:macos:
       fi
   script:
     - export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+    - |
+      if [ "$SHOULD_RELEASE" != "false" ]; then
+        dmg_test_library=$(mktemp -d)
+        trap 'rm -rf "$dmg_test_library"' EXIT
+        python3 -m pip install --quiet --target "$dmg_test_library" ds_store mac_alias
+        PYTHONPATH="$dmg_test_library" python3 scripts/write-dmg-layout.test.py
+      fi
     - node scripts/gitlab-release.mjs build darwin-aarch64
 
 publish:

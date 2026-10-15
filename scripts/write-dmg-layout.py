@@ -35,7 +35,10 @@ icvp = {
 }
 if background:
     icvp['backgroundType'] = 2
-    alias = Alias.for_file(background)
+    # statfs returns the canonical mountpoint (/private/var on macOS), while
+    # temporary paths commonly start with /var. mac_alias computes a relative
+    # path against that mountpoint, so resolve symlinks before creating it.
+    alias = Alias.for_file(os.path.realpath(background))
     # The volume is mounted in a temporary directory, so mac_alias records paths that climb out of it.
     # Record volume-relative paths like Finder does, so the alias still resolves when another volume
     # with the same name is mounted.
