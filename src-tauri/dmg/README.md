@@ -2,7 +2,7 @@
 
 `background.png` is the supplied 660 × 400 installer background (the supplied artwork is 1320 × 800, i.e. @2x).
 
-The layout lives in `bundle.macOS.dmg` in `../tauri.conf.json`. The Applications shortcut sits at (316, 112) and Trident at (253, 257), following the artwork's `create-dmg` spec. `scripts/style-dmg.mjs` sets Finder's icon size to 128 px and label size to 12 px after Tauri packaging. `scripts/tauri.mjs` runs this for local builds and both release pipelines before notarization; a Developer ID signed DMG is re-signed after styling. Run `npm run tauri -- bundle --bundles dmg` to package an existing build through this step. Finder keeps live icons and labels upright.
+The layout lives in `bundle.macOS.dmg` in `../tauri.conf.json`. The Applications shortcut sits at (315, 97) and Trident at (259, 258), following the artwork's `create-dmg` spec. `scripts/style-dmg.mjs` sets Finder's icon size to 96 px and label size to 12 px after Tauri packaging. `scripts/tauri.mjs` runs this for local builds and both release pipelines before notarization; a Developer ID signed DMG is re-signed after styling. Run `npm run tauri -- bundle --bundles dmg` to package an existing build through this step. Finder keeps live icons and labels upright.
 
 The 660 × 432 window includes Finder's 32 px title bar, leaving 660 × 400 for the artwork. Keep the window size and icon coordinates in sync when replacing the background.
 
