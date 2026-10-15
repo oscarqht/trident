@@ -26,14 +26,14 @@ Protect `main` and release tags; store credentials as masked/protected CI variab
 | `CI_RELEASE_TOKEN` | GitLab project/personal access token with `write_repository`, permitted to push main and `v*` tags. Alternatively enable repository pushes by `CI_JOB_TOKEN`. |
 | `TAURI_SIGNING_PRIVATE_KEY` | Existing Trident updater private key matching `src-tauri/tauri.conf.json`'s public key. Required on the macOS build runner. Use a value variable. Legacy `TAURI_PRIVATE_KEY` is also accepted. |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Updater key password, if encrypted. Legacy `TAURI_KEY_PASSWORD` is also accepted. |
-| `APPLE_CERTIFICATE` | Optional base64 Developer ID `.p12` with its private key. Imported into a temporary keychain and removed after the build. |
-| `APPLE_CERTIFICATE_PASSWORD` | Required with `APPLE_CERTIFICATE`. |
-| `APPLE_SIGNING_IDENTITY` | Required with `APPLE_CERTIFICATE`; overrides the repository's ad-hoc signing identity. |
-| `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | Optional Tauri notarization credentials; `APPLE_PASSWORD` is an Apple app-specific password. |
+| `APPLE_CERTIFICATE` | Required base64 Developer ID `.p12` with its private key. Imported into a temporary keychain and removed after the build. |
+| `APPLE_CERTIFICATE_PASSWORD` | Required. |
+| `APPLE_SIGNING_IDENTITY` | Required; overrides the repository's ad-hoc signing identity. |
+| `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | Required Tauri notarization credentials; `APPLE_PASSWORD` is an Apple app-specific password. |
 | `UPDATER_ENDPOINTS` | Optional comma-separated updater URLs applied only to GitLab-built bundles. Defaults to the internal GitLab release manifest. |
 | `RELEASE_TAG` | Optional existing `vX.Y.Z` tag for a manual pipeline on main. |
 
-The built-in `CI_JOB_TOKEN` handles package uploads and release API calls. No GitHub token or GitHub CLI is needed. Apple signing/notarization is optional, as in Raft's direct-build script; absent credentials retain Trident's ad-hoc signing. Native signing and notarization require actual runner validation.
+The built-in `CI_JOB_TOKEN` handles package uploads and release API calls. No GitHub token or GitHub CLI is needed. Release builds require all six Apple variables and a Developer ID Application identity. A before-bundle hook signs and verifies bundled Mach-O code (including native Node modules such as keytar). Tauri notarizes and staples the app before packaging its signed updater archive and DMG. Before collecting assets, CI verifies the app's identity, team, hardened runtime, stapled ticket, and Gatekeeper acceptance; checks the updater signature's key ID against the embedded public key; then submits the signed DMG to Apple, requires Accepted, staples it, and assesses the final installer. Any missing credentials or failed check blocks publication. Local developer builds can retain ad-hoc signing.
 
 ## Retries
 
@@ -60,9 +60,15 @@ Older installed builds still use the GitHub endpoint embedded in their binary. I
 Use Node.js 22.13+:
 
 ```sh
-node --test scripts/bump-version.test.js scripts/gitlab-release.test.js scripts/updater-credentials.test.mjs
+node --test scripts/bump-version.test.js scripts/gitlab-release.test.js scripts/updater-credentials.test.mjs scripts/macos-release.test.mjs
 cargo test --manifest-path src-tauri/Cargo.toml --lib updater_auth
 glab ci lint .gitlab-ci.yml --include-jobs
 ```
 
 Tests use disposable local Git remotes and a mock GitLab server. Credential tests verify bridge authorization, exact-server matching, and missing/unavailable keychain behavior. They cover atomic pushes, retries, tag/version resolution, architecture-aware asset collection, internal updater URLs, missing signatures, upload failure, and creating/updating releases. A passing lint/test run does not prove native builds, signing credentials, runner availability, or live publication.
+
+## Signing failures
+
+If Tauri reports `skipping app notarization`, the result is not ready for distribution even if the DMG opens and the build is green. Configure `APPLE_PASSWORD` with an Apple app-specific password for `APPLE_ID`; never use the normal account password. See [Tauri macOS signing](https://v2.tauri.app/distribute/sign/macos/) and [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
+
+An updater key mismatch is separate from Apple code signing. Restore the private updater key that matches the public key embedded in existing builds, or deliberately rotate the public key and distribute a new installer manually. Rebuilding with an unrelated updater private key cannot update old installations.

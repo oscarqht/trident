@@ -20,7 +20,7 @@ prepare:
   image: node:22-bookworm
   resource_group: release-version
   script:
-    - node --test scripts/bump-version.test.js scripts/gitlab-release.test.js scripts/updater-credentials.test.mjs
+    - node --test scripts/bump-version.test.js scripts/gitlab-release.test.js scripts/updater-credentials.test.mjs scripts/macos-release.test.mjs
     - node scripts/gitlab-release.mjs prepare
   artifacts:
     when: always

@@ -59,3 +59,5 @@ src-tauri/*.key.pub
 /latest.json
 /gitlab-tauri.conf.json
 /release-assets/
+
+/src-tauri/tauri.macos.release.json

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { validateCredentials, verifyReleaseBundle } from './macos-release.mjs';
 
 const env = process.env;
 const run = (command, args, options = {}) => {
@@ -86,6 +87,7 @@ export function generateTauriConfig(customEnv = env) {
   }
   // Explicitly honor the certificate identity over the repository's ad-hoc default.
   if (customEnv.APPLE_SIGNING_IDENTITY) {
+    config.build = { beforeBundleCommand: 'node scripts/macos-release.mjs sign-resources' };
     config.bundle = { macOS: { signingIdentity: customEnv.APPLE_SIGNING_IDENTITY, hardenedRuntime: true } };
   }
   return config;
@@ -105,6 +107,7 @@ async function build(platform) {
   const targets = { 'darwin-aarch64': 'aarch64-apple-darwin' };
   const target = targets[platform];
   if (!target) throw new Error(`Unsupported platform: ${platform}`);
+  validateCredentials(env);
   run('git', ['fetch', 'origin', `refs/tags/${env.RELEASE_TAG}:refs/tags/${env.RELEASE_TAG}`]);
   run('git', ['checkout', '--detach', env.RELEASE_TAG]);
   const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
@@ -139,6 +142,7 @@ async function build(platform) {
     }
     run(process.execPath, getTauriBuildArgs(platform, target));
     const bundle = `src-tauri/target/${target}/release/bundle`;
+    verifyReleaseBundle(bundle, env);
     const destination = `release-assets/${platform}`;
     collectAssets(bundle, destination, platform);
     if (!fs.readdirSync(destination).some((name) => name.endsWith('.sig'))) throw new Error('Build did not produce signed updater artifacts');

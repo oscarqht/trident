@@ -35,7 +35,7 @@ test('GitLab preparation bumps main once, checks out the released commit, and re
   git('init', '-b', 'main');
   git('config', 'user.name', 'Release test');
   git('config', 'user.email', 'test@example.com');
-  for (const name of ['gitlab-release.mjs', 'bump-version.js', 'generate-changelog.js']) fs.copyFileSync(path.join(scriptDir, name), path.join(cwd, 'scripts', name));
+  for (const name of ['gitlab-release.mjs', 'macos-release.mjs', 'bump-version.js', 'generate-changelog.js']) fs.copyFileSync(path.join(scriptDir, name), path.join(cwd, 'scripts', name));
   const pkg = { name: 'release-test', version: '1.2.0' };
   fs.writeFileSync(path.join(cwd, 'package.json'), JSON.stringify(pkg));
   fs.writeFileSync(path.join(cwd, 'package-lock.json'), JSON.stringify({ ...pkg, lockfileVersion: 3, packages: { '': pkg } }));
@@ -191,6 +191,7 @@ test('generateTauriConfig inherits the application updater endpoint and supports
   const signingConfig = generateTauriConfig({ APPLE_SIGNING_IDENTITY: 'Developer ID' });
   assert.equal(signingConfig.bundle.macOS.signingIdentity, 'Developer ID');
   assert.equal(signingConfig.bundle.macOS.hardenedRuntime, true);
+  assert.equal(signingConfig.build.beforeBundleCommand, 'node scripts/macos-release.mjs sign-resources');
 
   assert.throws(() => getTauriBuildArgs('windows-x86_64', 'x86_64-pc-windows-msvc', 'win32'), /Unsupported release platform/);
   assert.throws(() => getTauriBuildArgs('linux-x86_64', 'x86_64-unknown-linux-gnu', 'linux'), /Unsupported release platform/);
