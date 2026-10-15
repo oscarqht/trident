@@ -37,7 +37,7 @@ export function run(command, args, spawn = spawnSync) {
 const sleepSync = milliseconds => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 
 export function runStapler(action, target, execute = run, sleep = sleepSync) {
-  const delays = [5000, 15000];
+  const delays = [5000, 15000, 45000, 90000];
   for (let attempt = 0; ; attempt++) {
     try {
       return execute('xcrun', ['stapler', action, target]);
@@ -46,7 +46,7 @@ export function runStapler(action, target, execute = run, sleep = sleepSync) {
       const diagnostics = [error.message, error.stdout, error.stderr].filter(Boolean).join('\n');
       const transient = /NSURLErrorDomain[\s\S]*?Code=-(?:1001|1003|1004|1005|1006|1009)\b/.test(diagnostics);
       if (!transient || attempt >= delays.length) throw error;
-      console.warn(`Apple stapler ${action} lost its network connection; retrying in ${delays[attempt] / 1000}s (${attempt + 2}/3).`);
+      console.warn(`Apple stapler ${action} lost its network connection; retrying in ${delays[attempt] / 1000}s (${attempt + 2}/${delays.length + 1}).`);
       sleep(delays[attempt]);
     }
   }

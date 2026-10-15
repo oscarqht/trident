@@ -160,15 +160,15 @@ test('retries a lost Apple CloudKit connection during DMG stapling without resub
   assert.ok(calls.at(-1).includes('context:primary-signature'));
 });
 
-test('stapler retries stop after three transient failures and retain Apple diagnostics', () => {
+test('stapler retries stop after five transient failures and retain Apple diagnostics', () => {
   const sleeps = [];
   let attempts = 0;
   assert.throws(() => runStapler('staple', 'dmg', () => {
     attempts++;
     throw new Error('NSURLErrorDomain Code=-1005 "The network connection was lost."');
   }, milliseconds => sleeps.push(milliseconds)), /Code=-1005/);
-  assert.equal(attempts, 3);
-  assert.deepEqual(sleeps, [5000, 15000]);
+  assert.equal(attempts, 5);
+  assert.deepEqual(sleeps, [5000, 15000, 45000, 90000]);
 });
 
 test('stapler does not retry permanent ticket or validation failures', () => {
