@@ -155,6 +155,8 @@ jobs:
 
       - name: Verify app and notarize final DMG
         env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY || secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || secrets.TAURI_KEY_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -165,7 +167,7 @@ jobs:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           node scripts/macos-release.mjs notarize
-          gh release upload "$RELEASE_TAG" src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg --clobber
+          gh release upload "$RELEASE_TAG" src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig --clobber
 
   publish:
     name: Publish Release

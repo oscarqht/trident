@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateCredentials, verifyAndNotarize, verifyUpdaterKeyMatch, signNativeResources, withSigningKeychain, updateSigningKeychainSearchList, runStapler, run } from './macos-release.mjs';
+import { validateCredentials, verifyAndNotarize, rebuildMacosContainers, verifyUpdaterKeyMatch, signNativeResources, withSigningKeychain, updateSigningKeychainSearchList, runStapler, run } from './macos-release.mjs';
 
 const env = {
   APPLE_CERTIFICATE: 'base64-p12', APPLE_CERTIFICATE_PASSWORD: 'certificate-password',
@@ -259,4 +259,74 @@ test('keychain registration and cleanup preserve unrelated current keychains', (
   searchList.push('/tmp/another-job.keychain-db');
   updateSigningKeychainSearchList('/tmp/trident.keychain-db', false, execute);
   assert.deepEqual(searchList, ['/tmp/login.keychain-db', '/tmp/another-job.keychain-db']);
+});
+
+
+test('repairs a missing app ticket and rebuilds both containers before final DMG notarization', () => {
+  const calls = [];
+  const fake = fakeRunner(calls);
+  let appValidations = 0;
+  verifyAndNotarize('app', 'dmg', env, (command, args) => {
+    if (args[0] === 'stapler' && args[1] === 'validate' && args[2] === 'app' && ++appValidations === 1) {
+      calls.push([command, ...args]);
+      throw new Error('xcrun stapler failed (exit 65). app does not have a ticket stapled to it.');
+    }
+    return fake(command, args);
+  }, () => {}, () => calls.push(['rebuild-containers']));
+  assert.equal(appValidations, 2);
+  const staple = calls.findIndex(call => call[1] === 'stapler' && call[2] === 'staple' && call[3] === 'app');
+  const rebuild = calls.findIndex(call => call[0] === 'rebuild-containers');
+  const notarize = calls.findIndex(call => call[1] === 'notarytool' && call[2] === 'submit');
+  assert.ok(staple >= 0 && rebuild > staple && notarize > rebuild);
+});
+
+test('app ticket recovery failure blocks repackaging and DMG publication', () => {
+  const calls = [];
+  const fake = fakeRunner(calls);
+  assert.throws(() => verifyAndNotarize('app', 'dmg', env, (command, args) => {
+    if (args[0] === 'stapler') {
+      if (args[1] === 'validate') throw new Error('app does not have a ticket stapled to it.');
+      throw new Error('Apple has no notarization record for this app');
+    }
+    return fake(command, args);
+  }, () => {}, () => assert.fail('must not repackage')), /no notarization record/);
+  assert.ok(!calls.some(call => call[1] === 'notarytool'));
+});
+
+
+test('repackaging copies the ticket-bearing app, replaces the DMG, and signs the regenerated updater archive', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'trident-repackage-test-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const app = path.join(directory, 'Trident.app');
+  fs.mkdirSync(path.join(app, 'Contents'), { recursive: true });
+  fs.writeFileSync(path.join(app, 'Contents/ticket-fixture'), 'stapled ticket');
+  const dmg = path.join(directory, 'Trident.dmg');
+  const archive = path.join(directory, 'Trident.app.tar.gz');
+  fs.writeFileSync(dmg, 'old DMG');
+  fs.writeFileSync(archive, 'old archive');
+  fs.writeFileSync(`${archive}.sig`, 'old signature');
+  const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+  const publicKey = Buffer.from(Buffer.from(config.plugins.updater.pubkey, 'base64').toString().trim().split(/\r?\n/)[1], 'base64');
+  const signingEnv = { ...env, TRIDENT_SIGNING_KEYCHAIN: '/tmp/job.keychain-db', TAURI_SIGNING_PRIVATE_KEY: 'fixture-key' };
+  const calls = [];
+  rebuildMacosContainers(app, dmg, archive, signingEnv, (command, args) => {
+    calls.push([command, ...args]);
+    if (command === 'ditto') fs.cpSync(args.at(-2), args.at(-1), { recursive: true });
+    if (command === 'hdiutil') {
+      const staging = args[args.indexOf('-srcfolder') + 1];
+      assert.equal(fs.readFileSync(path.join(staging, 'Trident.app/Contents/ticket-fixture'), 'utf8'), 'stapled ticket');
+      assert.equal(fs.readlinkSync(path.join(staging, 'Applications')), '/Applications');
+      fs.writeFileSync(args.at(-1), 'rebuilt DMG');
+    }
+    if (command === 'tar') fs.writeFileSync(archive, 'regenerated archive');
+    if (command === process.execPath) {
+      const signature = Buffer.alloc(74); signature.write('ED'); publicKey.copy(signature, 2, 2, 10);
+      fs.writeFileSync(`${archive}.sig`, Buffer.from(`untrusted comment: fixture\n${signature.toString('base64')}\n`).toString('base64'));
+    }
+    return command === 'security' ? `"${signingEnv.TRIDENT_SIGNING_KEYCHAIN}"` : '';
+  });
+  assert.equal(fs.readFileSync(dmg, 'utf8'), 'rebuilt DMG');
+  assert.equal(fs.readFileSync(archive, 'utf8'), 'regenerated archive');
+  assert.doesNotThrow(() => verifyUpdaterKeyMatch(`${archive}.sig`, config.plugins.updater.pubkey));
+  assert.ok(calls.some(call => call[0] === process.execPath && call.includes('signer') && call.includes('sign')));
 });
