@@ -198,7 +198,7 @@ test('generateTauriConfig inherits the application updater endpoint and supports
   assert.throws(() => getTauriBuildArgs('darwin-aarch64', 'aarch64-apple-darwin', 'linux'), /macOS runner/);
   assert.deepEqual(
     getTauriBuildArgs('darwin-aarch64', 'aarch64-apple-darwin', 'darwin'),
-    ['node_modules/@tauri-apps/cli/tauri.js', 'build', '--target', 'aarch64-apple-darwin', '--config', 'gitlab-tauri.conf.json'],
+    ['scripts/tauri.mjs', 'build', '--target', 'aarch64-apple-darwin', '--config', 'gitlab-tauri.conf.json'],
   );
 });
 

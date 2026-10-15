@@ -197,12 +197,17 @@ export function rebuildMacosContainers(app, dmg, archive, env, execute = run) {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'trident-restaple-'));
   try {
     const staging = path.join(temporary, 'installer');
-    fs.mkdirSync(staging);
-    // ditto preserves the app ticket and resource metadata in the installer copy.
-    execute('ditto', ['--rsrc', '--extattr', app, path.join(staging, path.basename(app))]);
-    fs.symlinkSync('/Applications', path.join(staging, 'Applications'));
+    const writable = path.join(temporary, 'writable.dmg');
     const image = path.join(temporary, 'installer.dmg');
-    execute('hdiutil', ['create', '-volname', path.basename(app, '.app'), '-srcfolder', staging, '-format', 'UDZO', '-ov', image]);
+    // Preserve Finder metadata and artwork when replacing the ticket-bearing app.
+    execute('hdiutil', ['convert', dmg, '-format', 'UDRW', '-o', writable]);
+    execute('hdiutil', ['attach', '-nobrowse', '-mountpoint', staging, writable]);
+    try {
+      execute('ditto', ['--rsrc', '--extattr', app, path.join(staging, path.basename(app))]);
+    } finally {
+      execute('hdiutil', ['detach', staging]);
+    }
+    execute('hdiutil', ['convert', writable, '-format', 'UDZO', '-o', image]);
     updateSigningKeychainSearchList(env.TRIDENT_SIGNING_KEYCHAIN, true, execute);
     execute('codesign', ['--force', '--timestamp', '--keychain', env.TRIDENT_SIGNING_KEYCHAIN, '--sign', env.APPLE_SIGNING_IDENTITY, image]);
     fs.copyFileSync(image, dmg);

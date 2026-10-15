@@ -97,7 +97,7 @@ export function getTauriBuildArgs(platform, target, hostPlatform = process.platf
     throw new Error(`Unsupported release platform: ${platform}`);
   }
   if (hostPlatform !== 'darwin') throw new Error('macOS builds require a macOS runner');
-  return ['node_modules/@tauri-apps/cli/tauri.js', 'build', '--target', target, '--config', 'gitlab-tauri.conf.json'];
+  return ['scripts/tauri.mjs', 'build', '--target', target, '--config', 'gitlab-tauri.conf.json'];
 }
 
 async function build(platform) {

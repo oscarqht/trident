@@ -33,7 +33,22 @@
     "macOS": {
       "signingIdentity": "-",
       "minimumSystemVersion": "10.15",
-      "infoPlist": "./Info.plist"
+      "infoPlist": "./Info.plist",
+      "dmg": {
+        "background": "dmg/background.png",
+        "windowSize": {
+          "width": 800,
+          "height": 482
+        },
+        "appPosition": {
+          "x": 419,
+          "y": 175
+        },
+        "applicationFolderPosition": {
+          "x": 310,
+          "y": 172
+        }
+      }
     }
   },
   "plugins": {

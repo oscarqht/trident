@@ -313,10 +313,24 @@ test('repackaging copies the ticket-bearing app, replaces the DMG, and signs the
     calls.push([command, ...args]);
     if (command === 'ditto') fs.cpSync(args.at(-2), args.at(-1), { recursive: true });
     if (command === 'hdiutil') {
-      const staging = args[args.indexOf('-srcfolder') + 1];
-      assert.equal(fs.readFileSync(path.join(staging, 'Trident.app/Contents/ticket-fixture'), 'utf8'), 'stapled ticket');
-      assert.equal(fs.readlinkSync(path.join(staging, 'Applications')), '/Applications');
-      fs.writeFileSync(args.at(-1), 'rebuilt DMG');
+      if (args[0] === 'attach') {
+        const staging = args[args.indexOf('-mountpoint') + 1];
+        fs.mkdirSync(path.join(staging, '.background'), { recursive: true });
+        fs.writeFileSync(path.join(staging, '.background/background.png'), 'installer artwork');
+        fs.writeFileSync(path.join(staging, '.DS_Store'), 'Finder layout');
+        fs.symlinkSync('/Applications', path.join(staging, 'Applications'));
+      } else if (args[0] === 'detach') {
+        const staging = args[1];
+        assert.equal(fs.readFileSync(path.join(staging, 'Trident.app/Contents/ticket-fixture'), 'utf8'), 'stapled ticket');
+        assert.equal(fs.readFileSync(path.join(staging, '.background/background.png'), 'utf8'), 'installer artwork');
+        assert.equal(fs.readFileSync(path.join(staging, '.DS_Store'), 'utf8'), 'Finder layout');
+        assert.equal(fs.readlinkSync(path.join(staging, 'Applications')), '/Applications');
+      } else if (args[0] === 'convert') {
+        assert.ok(args.includes('UDRW') || args.includes('UDZO'));
+        fs.writeFileSync(args.at(-1), 'rebuilt DMG');
+      } else {
+        assert.fail('Recovery must preserve the existing image, not create a bare DMG');
+      }
     }
     if (command === 'tar') fs.writeFileSync(archive, 'regenerated archive');
     if (command === process.execPath) {
