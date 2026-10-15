@@ -1,0 +1,85 @@
+# Native desktop builds; Windows needs its own shell runner for bundled Node native modules.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_MESSAGE =~ /^chore\(release\):/'
+      when: never
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "web"'
+    - when: never
+
+stages: [prepare, build, publish]
+
+variables:
+  GIT_DEPTH: "0"
+  NO_STRIP: "true"
+  MACOS_RUNNER_TAG: "Alpha-iOS"
+  WINDOWS_RUNNER_TAG: "windows"
+
+prepare:
+  stage: prepare
+  image: node:22-bookworm
+  resource_group: release-version
+  script:
+    - node --test scripts/bump-version.test.js scripts/gitlab-release.test.js
+    - node scripts/gitlab-release.mjs prepare
+  artifacts:
+    when: always
+    paths: [release.env, changelog.txt]
+    reports:
+      dotenv: release.env
+    expire_in: 1 week
+
+.build:
+  stage: build
+  needs: [prepare]
+  artifacts:
+    paths: [release-assets/]
+    expire_in: 1 week
+
+build:macos:
+  extends: .build
+  tags: ['$MACOS_RUNNER_TAG']
+  resource_group: macos-signing
+  before_script:
+    - export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+    - |
+      if [ "$SHOULD_RELEASE" != "false" ] && ! command -v rustup >/dev/null 2>&1; then
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+      fi
+  script:
+    - export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+    - node scripts/gitlab-release.mjs build darwin-aarch64
+
+build:windows:
+  extends: .build
+  tags: ['$WINDOWS_RUNNER_TAG']
+  script:
+    - node scripts/gitlab-release.mjs build windows-x86_64
+
+build:linux:
+  extends: .build
+  image: node:22-bookworm
+  variables:
+    APPIMAGE_EXTRACT_AND_RUN: "1"
+  before_script:
+    - |
+      if [ "$SHOULD_RELEASE" != "false" ]; then
+        apt-get update
+        apt-get install -y --no-install-recommends build-essential curl ca-certificates libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libsecret-1-dev python3 pkg-config zstd binutils file
+        if ! command -v rustup >/dev/null 2>&1; then
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+        fi
+      fi
+    - export PATH="$HOME/.cargo/bin:$PATH"
+  script:
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    - node scripts/gitlab-release.mjs build linux-x86_64
+
+publish:
+  stage: publish
+  image: node:22-bookworm
+  needs: [prepare, 'build:macos', 'build:windows', 'build:linux']
+  resource_group: release-publish
+  script:
+    - node scripts/gitlab-release.mjs publish

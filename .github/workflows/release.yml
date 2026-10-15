@@ -1,16 +1,11 @@
 name: Release Desktop App
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
         description: 'Tag to release (e.g. v0.54.0)'
-        required: false
+        required: true
 
 permissions:
   contents: write
@@ -21,7 +16,7 @@ concurrency:
 
 jobs:
   prepare:
-    name: Prepare Tag & Version
+    name: Resolve Existing Tag
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.version_step.outputs.tag }}
@@ -41,24 +36,21 @@ jobs:
           node-version: 22
           cache: 'npm'
 
-      - name: Resolve or bump tag
+      - name: Resolve release tag
         id: version_step
         run: |
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "Building for pushed tag: ${{ github.ref_name }}"
-            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-          elif [ -n "${{ github.event.inputs.tag }}" ]; then
-            INPUT_TAG="${{ github.event.inputs.tag }}"
-            echo "Building for input tag: $INPUT_TAG"
-            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
-            echo "version=${INPUT_TAG#v}" >> "$GITHUB_OUTPUT"
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Push to main detected. Bumping minor version..."
-            node scripts/bump-version.js
+          INPUT_TAG="$RELEASE_TAG"
+          if ! [[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "A vMAJOR.MINOR.PATCH tag is required" >&2
+            exit 1
           fi
+          git checkout --detach "$INPUT_TAG"
+          node -e 'if (`v${require("./package.json").version}` !== process.env.RELEASE_TAG) process.exit(1)'
+          echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${INPUT_TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
 
       - name: Generate Changelog
         id: changelog_step
