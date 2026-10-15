@@ -61,3 +61,6 @@ src-tauri/*.key.pub
 /release-assets/
 
 /src-tauri/tauri.macos.release.json
+
+# Public Apple intermediate certificates used by CI
+!scripts/certificates/*.cer
