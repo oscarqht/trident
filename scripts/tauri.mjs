@@ -16,13 +16,7 @@ if (process.platform === 'darwin' && ['build', 'bundle'].includes(args[0]) && !a
     const directory = path.join(process.env.CARGO_TARGET_DIR || 'src-tauri/target', target || '', args.includes('--debug') || args.includes('-d') ? 'debug' : 'release', 'bundle/dmg');
     if (!fs.existsSync(directory)) throw new Error(`DMG output directory missing: ${directory}`);
     for (const name of fs.readdirSync(directory).filter(name => name.endsWith('.dmg'))) {
-      try {
-        styleDmg(path.join(directory, name));
-      } catch (error) {
-        // CI runners have no Finder GUI session; ship the unstyled DMG instead of failing the release.
-        if (!process.env.CI) throw error;
-        console.warn(`Skipping DMG styling for ${name}: ${error.message.split('\n')[0]}`);
-      }
+      styleDmg(path.join(directory, name));
     }
   }
 }
