@@ -9,3 +9,7 @@ The 800 × 482 window includes Finder's 32 px title bar, leaving 800 × 450 for 
 ## Finder preview
 
 The styling step also places hidden installer assets at (100, 100), near the top-left corner inside the canvas, and verifies their positions, preventing them from expanding Finder's scrollable area. Preview with Finder's **Show Hidden Files** disabled (toggle with Command-Shift-period) so these supporting files stay hidden.
+
+## Styling on CI
+
+CI runners have no Finder session, so when `CI` is set `scripts/style-dmg.mjs` skips AppleScript and writes the volume's `.DS_Store` directly with `scripts/write-dmg-layout.py` (needs `python3` with pip; it installs `ds_store` and `mac_alias` into a temporary directory). Set `DMG_STYLE_MODE=ds-store` or `finder` to force either path locally. If styling still fails in CI, `scripts/tauri.mjs` warns and ships the unstyled DMG.
