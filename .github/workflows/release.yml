@@ -126,7 +126,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build universal credential storage addon
+        run: node scripts/build-macos-keytar.mjs
+
       - name: Build frontend
+        env:
+          TRIDENT_NATIVE_ARCH: universal
         run: npm run build
 
       - name: Build and Package with Tauri Action

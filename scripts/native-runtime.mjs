@@ -13,10 +13,11 @@ export function verifyNativeRuntime(root, arch = process.env.TRIDENT_NATIVE_ARCH
   load = filename => createRequire(filename)('keytar')) {
   const entrypoint = path.resolve(root, 'server.js');
   const binary = path.resolve(root, 'node_modules/keytar/build/Release/keytar.node');
-  const expected = arch === 'x64' ? 'x86_64' : arch;
-  if (!architectures(binary).trim().split(/\s+/).includes(expected)) {
+  const expected = arch === 'universal' ? ['x86_64', 'arm64'] : [arch === 'x64' ? 'x86_64' : arch];
+  const available = architectures(binary).trim().split(/\s+/);
+  if (!expected.every(slice => available.includes(slice))) {
     throw new Error(`Bundled keytar does not support ${arch}; rebuild native dependencies for the release architecture.`);
   }
   // A foreign-arch addon cannot be dlopen'd by this Node; the lipo check covers it.
-  if (arch === hostArch) load(entrypoint);
+  if (arch === 'universal' || arch === hostArch) load(entrypoint);
 }

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { verifyNativeRuntime } from './native-runtime.mjs';
 import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -253,6 +254,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (process.argv[2] === 'validate') {
     console.log('Apple signing and notarization credentials are configured.');
   } else if (process.argv[2] === 'sign-resources') {
+    verifyNativeRuntime('.next/standalone', 'universal');
     const sign = signingEnv => signNativeResources('.next/standalone', signingEnv);
     const signed = process.env.TRIDENT_SIGNING_KEYCHAIN ? sign(process.env) : withSigningKeychain(process.env, sign);
     console.log(`Signed and verified ${signed.length} bundled native code files.`);
