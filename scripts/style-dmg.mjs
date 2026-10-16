@@ -30,6 +30,18 @@ export function applyDmgFileIcon(dmg, icon, execute = (command, args) => execFil
   execute('swift', ['-e', SET_FILE_ICON_SWIFT, icon, dmg]);
 }
 
+// Finder file icons are external xattrs; HTTP downloads only preserve data bytes.
+// Package after final signing/stapling and asset renaming so Archive Utility can
+// restore those attributes from the ZIP's __MACOSX AppleDouble entry.
+export function packageDmgDownload(dmg, icon) {
+  if (process.platform !== 'darwin') throw new Error('DMG download packaging requires macOS');
+  applyDmgFileIcon(dmg, icon);
+  const archive = `${dmg}.zip`;
+  fs.rmSync(archive, { force: true });
+  execFileSync('ditto', ['-c', '-k', '--rsrc', '--extattr', '--sequesterRsrc', dmg, archive]);
+  return archive;
+}
+
 export function signStyledDmg(dmg, identity, env = process.env, execute = (command, args) => execFileSync(command, args, { encoding: 'utf8' })) {
   const keychain = env.TRIDENT_SIGNING_KEYCHAIN;
   // Tauri can replace the search list during packaging. Restore this job's

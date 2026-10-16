@@ -91,6 +91,16 @@ test('collector adds architecture to macOS archive and keeps its signature paire
   assert.throws(() => collectAssets(bundle, destination, 'darwin-aarch64'), /Duplicate/);
 });
 
+test('collector preserves the metadata ZIP through Linux publication', t => {
+  const directory = fixture(t);
+  const source = path.join(directory, 'macos');
+  fs.mkdirSync(source);
+  fs.writeFileSync(path.join(source, 'Installer_aarch64.dmg.zip'), 'archive-with-appledouble');
+  const destination = path.join(directory, 'published');
+  collectAssets(source, destination, 'published');
+  assert.equal(fs.readFileSync(path.join(destination, 'Installer_aarch64.dmg.zip'), 'utf8'), 'archive-with-appledouble');
+});
+
 async function publicationFixture(t) {
   const directory = fixture(t);
   fs.mkdirSync(path.join(directory, 'scripts'));
@@ -159,6 +169,21 @@ test('publication uploads signed manifest before creating release and retries ex
 
   assert.ok(f.requests.some((req) => req.method === 'PUT' && req.url.endsWith('/assets/links/7')));
   assert.equal(f.requests.at(-1).method, 'PUT');
+});
+
+test('publication uploads the DMG ZIP and explains icon-preserving extraction', async t => {
+  const f = await publicationFixture(t);
+  const name = 'Installer_aarch64.dmg.zip';
+  fs.writeFileSync(path.join(f.directory, 'release-assets/darwin-aarch64', name), 'appledouble-archive');
+  const result = await f.execute();
+  assert.equal(result.status, 0, result.output);
+  const upload = f.requests.find(req => req.method === 'PUT' && req.url.endsWith(`/${name}`));
+  assert.equal(upload?.data, 'appledouble-archive');
+  const body = JSON.parse(f.requests.at(-1).data);
+  assert.ok(body.assets.links.some(link => link.direct_asset_path === `/${name}`));
+  assert.match(body.description, /download the `\.dmg\.zip`/);
+  const manifest = JSON.parse(f.requests.find(req => req.url.endsWith('/latest.json')).data);
+  assert.ok(manifest.platforms['darwin-aarch64'].url.endsWith('.app.tar.gz'));
 });
 
 test('upload failure prevents release publication', async (t) => {

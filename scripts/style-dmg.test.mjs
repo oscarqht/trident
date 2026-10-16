@@ -4,7 +4,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyDmgFileIcon, applyVolumeIcon, resolveDmgIcon, signStyledDmg } from './style-dmg.mjs';
+import { packageDmgDownload, applyDmgFileIcon, applyVolumeIcon, resolveDmgIcon, signStyledDmg } from './style-dmg.mjs';
 
 const identity = 'Developer ID Application: Fixture (TEAM)';
 
@@ -71,4 +71,29 @@ test('a re-signing failure blocks completion and retains the error', () => {
   assert.throws(() => signStyledDmg('styled.dmg', identity, {}, () => {
     throw new Error('signing identity unavailable');
   }), /signing identity unavailable/);
+});
+
+// HTTP and GitLab artifacts transfer data bytes, not macOS extended attributes.
+test('DMG ZIP restores the icon after byte-only transfer and extraction', { skip: process.platform !== 'darwin' }, t => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'dmg-download-test-'));
+  t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  const dmg = path.join(temporary, 'Installer.dmg');
+  const payload = Buffer.from('signed-and-stapled-dmg-bytes');
+  fs.writeFileSync(dmg, payload);
+  const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+  packageDmgDownload(dmg, resolveDmgIcon(config));
+  const originalFork = fs.readFileSync(`${dmg}/..namedfork/rsrc`);
+  assert.ok(originalFork.length > 0);
+  const downloaded = path.join(temporary, 'downloaded.zip');
+  fs.writeFileSync(downloaded, fs.readFileSync(`${dmg}.zip`));
+  const extracted = path.join(temporary, 'extracted');
+  execFileSync('ditto', ['-x', '-k', downloaded, extracted]);
+  const restored = path.join(extracted, 'Installer.dmg');
+  assert.deepEqual(fs.readFileSync(restored), payload, 'signing/notarization bytes must stay unchanged');
+  assert.deepEqual(fs.readFileSync(`${restored}/..namedfork/rsrc`), originalFork);
+  assert.ok(execFileSync('GetFileInfo', ['-a', restored], { encoding: 'utf8' }).includes('C'));
+  // A raw download of exactly the same DMG bytes cannot retain its custom icon.
+  const raw = path.join(temporary, 'raw.dmg');
+  fs.writeFileSync(raw, fs.readFileSync(dmg));
+  assert.ok(!execFileSync('xattr', [raw], { encoding: 'utf8' }).includes('com.apple.ResourceFork'));
 });

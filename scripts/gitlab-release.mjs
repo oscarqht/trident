@@ -27,7 +27,7 @@ export function collectAssets(bundleDir, destination, platform) {
     if (entry.isDirectory()) {
       // The unpacked .app is distributed through its signed archive.
       if (!entry.name.endsWith('.app')) collectAssets(source, destination, platform);
-    } else if (/\.(dmg|app\.tar\.gz)(\.sig)?$/.test(entry.name)) {
+    } else if (/\.(dmg\.zip|dmg|app\.tar\.gz)(\.sig)?$/.test(entry.name)) {
       const archName = platform === 'darwin-aarch64'
         ? entry.name.replace(/\.app\.tar\.gz/, '_aarch64.app.tar.gz') : entry.name;
       const name = archName.replace(/[^A-Za-z0-9._+-]/g, '_');
@@ -123,12 +123,21 @@ async function build(platform) {
   run('cargo', ['test', '--manifest-path', 'src-tauri/Cargo.toml', '--lib']);
   const config = generateTauriConfig(env);
   fs.writeFileSync('gitlab-tauri.conf.json', JSON.stringify(config));
+  const { packageDmgDownload, resolveDmgIcon } = await import('./style-dmg.mjs');
   withSigningKeychain(env, signingEnv => {
     run(process.execPath, getTauriBuildArgs(platform, target), { env: signingEnv });
     const bundle = `src-tauri/target/${target}/release/bundle`;
     verifyReleaseBundle(bundle, signingEnv);
     const destination = `release-assets/${platform}`;
     collectAssets(bundle, destination, platform);
+    if (platform === 'darwin-aarch64') {
+      // Collection strips file xattrs. Reapply the file icon and put the final
+      // signed/stapled DMG in a metadata-aware ZIP before GitLab uploads it.
+      const icon = resolveDmgIcon(JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8')));
+      for (const name of fs.readdirSync(destination).filter(name => name.endsWith('.dmg'))) {
+        packageDmgDownload(path.join(destination, name), icon);
+      }
+    }
     if (!fs.readdirSync(destination).some((name) => name.endsWith('.sig'))) throw new Error('Build did not produce signed updater artifacts');
   });
 }
@@ -163,7 +172,8 @@ async function publish() {
   }
   const releaseUrl = `${projectApi}/releases/${encodeURIComponent(tag)}`;
   const existing = await request(releaseUrl, {}, [404]);
-  const body = { name: `Trident ${tag}`, description: fs.readFileSync('changelog.txt', 'utf8') };
+  const body = { name: `Trident ${tag}`, description: fs.readFileSync('changelog.txt', 'utf8') + (fs.readdirSync(assets).some(name => name.endsWith('.dmg.zip'))
+    ? '\n\nmacOS: download the `.dmg.zip` and double-click it to extract the installer with its custom icon. Direct `.dmg` downloads use the standard macOS file icon.' : '') };
   if (existing.status === 404) {
     await request(`${projectApi}/releases`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, tag_name: tag, assets: { links } }) });
   } else {
