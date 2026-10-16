@@ -206,10 +206,8 @@ export async function getCredentialById(id: string): Promise<Credential | null> 
 }
 
 export async function getCredentialToken(id: string): Promise<string | null> {
-  const keytar = await loadKeytar();
-  if (!keytar) {
-    return null;
-  }
+  // A broken native module is a storage failure, not a missing saved token.
+  const keytar = await requireKeytar();
   return keytar.getPassword(SERVICE_NAME, getKeytarAccount(id));
 }
 

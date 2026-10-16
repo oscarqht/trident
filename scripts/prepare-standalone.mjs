@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyNativeRuntime } from './native-runtime.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -44,5 +45,9 @@ function removeSourceMaps(dir) {
 }
 
 removeSourceMaps(path.join(root, ".next", "standalone"));
+
+if (process.platform === 'darwin') {
+  verifyNativeRuntime(path.join(root, '.next', 'standalone'));
+}
 
 console.log("✓ Standalone assets prepared and optimized successfully.");
