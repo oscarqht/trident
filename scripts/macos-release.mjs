@@ -194,6 +194,8 @@ export function verifyUpdaterKeyMatch(signaturePath, encodedPublicKey) {
 export function rebuildMacosContainers(app, dmg, archive, env, execute = run) {
   if (!env.TRIDENT_SIGNING_KEYCHAIN) throw new Error('Repackaging requires the job signing keychain.');
   if (!env.TAURI_SIGNING_PRIVATE_KEY) throw new Error('Repackaging requires TAURI_SIGNING_PRIVATE_KEY.');
+  const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+  const icon = path.resolve('src-tauri', config.bundle.icon.find(entry => entry.endsWith('.icns')));
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'trident-restaple-'));
   try {
     const staging = path.join(temporary, 'installer');
@@ -204,17 +206,27 @@ export function rebuildMacosContainers(app, dmg, archive, env, execute = run) {
     execute('hdiutil', ['attach', '-nobrowse', '-mountpoint', staging, writable]);
     try {
       execute('ditto', ['--rsrc', '--extattr', app, path.join(staging, path.basename(app))]);
+      const volumeIcon = path.join(staging, '.VolumeIcon.icns');
+      fs.copyFileSync(icon, volumeIcon);
+      execute('SetFile', ['-c', 'icnC', volumeIcon]);
+      execute('SetFile', ['-a', 'C', staging]);
     } finally {
       execute('hdiutil', ['detach', staging]);
     }
     execute('hdiutil', ['convert', writable, '-format', 'UDZO', '-o', image]);
+    execute('swift', ['-e', [
+      'import AppKit',
+      'let iconPath = CommandLine.arguments[1]',
+      'let targetPath = CommandLine.arguments[2]',
+      'guard let image = NSImage(contentsOfFile: iconPath) else { fputs("Failed to load icon: \\(iconPath)\\n", stderr); exit(1) }',
+      'if !NSWorkspace.shared.setIcon(image, forFile: targetPath, options: []) { fputs("Failed to set file icon on: \\(targetPath)\\n", stderr); exit(1) }',
+    ].join('\n'), icon, image]);
     updateSigningKeychainSearchList(env.TRIDENT_SIGNING_KEYCHAIN, true, execute);
     execute('codesign', ['--force', '--timestamp', '--keychain', env.TRIDENT_SIGNING_KEYCHAIN, '--sign', env.APPLE_SIGNING_IDENTITY, image]);
-    fs.copyFileSync(image, dmg);
+    execute('ditto', ['--rsrc', '--extattr', image, dmg]);
     // The archive bytes changed when the ticket was added; generate a fresh updater signature.
     execute('tar', ['-czf', archive, '-C', path.dirname(app), path.basename(app)]);
     execute(process.execPath, [path.resolve('node_modules/@tauri-apps/cli/tauri.js'), 'signer', 'sign', archive]);
-    const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
     verifyUpdaterKeyMatch(`${archive}.sig`, config.plugins.updater.pubkey);
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });

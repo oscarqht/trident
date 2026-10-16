@@ -1,8 +1,47 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { signStyledDmg } from './style-dmg.mjs';
+import { applyDmgFileIcon, applyVolumeIcon, resolveDmgIcon, signStyledDmg } from './style-dmg.mjs';
 
 const identity = 'Developer ID Application: Fixture (TEAM)';
+
+test('resolves the .icns bundle icon from tauri.conf.json', () => {
+  const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+  const icon = resolveDmgIcon(config);
+  assert.equal(icon, path.resolve('src-tauri/icons/trident.icns'));
+  assert.ok(fs.existsSync(icon));
+});
+
+test('applyVolumeIcon copies .VolumeIcon.icns and marks custom icon attributes on the mounted volume', t => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'trident-volicon-test-'));
+  t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  const icon = path.join(temporary, 'trident.icns');
+  const mount = path.join(temporary, 'Trident');
+  fs.writeFileSync(icon, 'icns-fixture');
+  fs.mkdirSync(mount);
+  const calls = [];
+  applyVolumeIcon(mount, icon, (command, args) => calls.push([command, ...args]));
+  assert.equal(fs.readFileSync(path.join(mount, '.VolumeIcon.icns'), 'utf8'), 'icns-fixture');
+  assert.deepEqual(calls, [
+    ['SetFile', '-c', 'icnC', path.join(mount, '.VolumeIcon.icns')],
+    ['SetFile', '-a', 'C', mount],
+  ]);
+});
+
+test('applyDmgFileIcon stamps a custom icon onto the .dmg file', { skip: process.platform !== 'darwin' }, t => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'trident-fileicon-test-'));
+  t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  const dmg = path.join(temporary, 'Trident.dmg');
+  fs.writeFileSync(dmg, 'dmg-fixture');
+  const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+  const icon = resolveDmgIcon(config);
+  applyDmgFileIcon(dmg, icon);
+  const attributes = execFileSync('GetFileInfo', ['-a', dmg], { encoding: 'utf8' }).trim();
+  assert.ok(attributes.includes('C'), `Expected custom icon attribute 'C' on DMG, got: ${attributes}`);
+});
 
 test('restores the job keychain removed by Tauri before re-signing the styled DMG', () => {
   const calls = [];

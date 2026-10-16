@@ -5,6 +5,31 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { updateSigningKeychainSearchList } from './macos-release.mjs';
 
+const SET_FILE_ICON_SWIFT = [
+  'import AppKit',
+  'let iconPath = CommandLine.arguments[1]',
+  'let targetPath = CommandLine.arguments[2]',
+  'guard let image = NSImage(contentsOfFile: iconPath) else { fputs("Failed to load icon: \\(iconPath)\\n", stderr); exit(1) }',
+  'if !NSWorkspace.shared.setIcon(image, forFile: targetPath, options: []) { fputs("Failed to set file icon on: \\(targetPath)\\n", stderr); exit(1) }',
+].join('\n');
+
+export function resolveDmgIcon(config, root = 'src-tauri') {
+  const icon = config.bundle?.icon?.find(entry => entry.endsWith('.icns'));
+  if (!icon) throw new Error('Expected a .icns bundle icon in src-tauri/tauri.conf.json');
+  return path.resolve(root, icon);
+}
+
+export function applyVolumeIcon(mount, icon, execute = (command, args) => execFileSync(command, args, { encoding: 'utf8' })) {
+  const volumeIcon = path.join(mount, '.VolumeIcon.icns');
+  fs.copyFileSync(icon, volumeIcon);
+  execute('SetFile', ['-c', 'icnC', volumeIcon]);
+  execute('SetFile', ['-a', 'C', mount]);
+}
+
+export function applyDmgFileIcon(dmg, icon, execute = (command, args) => execFileSync(command, args, { encoding: 'utf8' })) {
+  execute('swift', ['-e', SET_FILE_ICON_SWIFT, icon, dmg]);
+}
+
 export function signStyledDmg(dmg, identity, env = process.env, execute = (command, args) => execFileSync(command, args, { encoding: 'utf8' })) {
   const keychain = env.TRIDENT_SIGNING_KEYCHAIN;
   // Tauri can replace the search list during packaging. Restore this job's
@@ -37,6 +62,7 @@ export function styleDmg(dmg) {
   dmg = path.resolve(dmg);
   const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
   const layout = config.bundle.macOS.dmg;
+  const icon = resolveDmgIcon(config);
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'trident-dmg-'));
   const writable = path.join(temporary, 'writable.dmg');
   const output = path.join(temporary, 'styled.dmg');
@@ -61,6 +87,7 @@ export function styleDmg(dmg) {
     fs.writeFileSync(infoFile, run('diskutil', ['info', '-plist', device]));
     const info = JSON.parse(run('plutil', ['-convert', 'json', '-o', '-', infoFile]));
     const volumeName = info.VolumeName;
+    fs.copyFileSync(icon, path.join(mount, '.VolumeIcon.icns'));
     if (headless) {
       writeLayout(mount, layout, temporary);
     } else {
@@ -103,13 +130,15 @@ export function styleDmg(dmg) {
       run('osascript', [script, mount, path.basename(temporary)]);
       run('diskutil', ['renameVolume', device, volumeName]);
     }
+    applyVolumeIcon(mount, icon, run);
     run('hdiutil', ['detach', mount]);
     attached = false;
     run('hdiutil', ['convert', writable, '-format', 'UDZO', '-o', output]);
+    applyDmgFileIcon(output, icon, run);
     if (identity) {
       signStyledDmg(output, identity, process.env, run);
     }
-    fs.copyFileSync(output, dmg);
+    run('ditto', ['--rsrc', '--extattr', output, dmg]);
     console.log(`Styled installer: ${dmg}`);
   } finally {
     if (attached) spawnSync('hdiutil', ['detach', mount]);
@@ -121,3 +150,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (!process.argv[2]) throw new Error('Usage: node scripts/style-dmg.mjs <installer.dmg>');
   styleDmg(process.argv[2]);
 }
+

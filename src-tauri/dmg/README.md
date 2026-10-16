@@ -12,6 +12,6 @@ The styling step also places hidden installer assets at (100, 100), near the top
 
 ## Styling on CI
 
-CI runners have no Finder session, so when `CI` is set `scripts/style-dmg.mjs` skips AppleScript and writes the volume's `.DS_Store` directly with `scripts/write-dmg-layout.py` (needs `python3` with pip; it installs `ds_store` and `mac_alias` into a temporary directory). The background path is canonicalized before alias creation so macOS's `/var` and `/private/var` paths produce a volume-relative reference that survives remounting. Set `DMG_STYLE_MODE=ds-store` or `finder` to force either path locally. Styling failures stop the build, including on CI.
+CI runners have no Finder session, so when `CI` is set `scripts/style-dmg.mjs` skips AppleScript and writes the volume's `.DS_Store` directly with `scripts/write-dmg-layout.py` (needs `python3` with pip; it installs `ds_store` and `mac_alias` into a temporary directory), stamps `.VolumeIcon.icns` and the volume custom-icon flag via `SetFile`, and sets the custom project icon on the `.dmg` file itself before signing. The background path is canonicalized before alias creation so macOS's `/var` and `/private/var` paths produce a volume-relative reference that survives remounting. Set `DMG_STYLE_MODE=ds-store` or `finder` to force either path locally. Styling failures stop the build, including on CI.
 
 Run `python3 scripts/write-dmg-layout.test.py` on macOS with `ds_store` and `mac_alias` installed to test alias creation through a symlinked mount and inspect the layout after remounting the image.
