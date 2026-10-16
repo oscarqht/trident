@@ -35,7 +35,7 @@ test('GitLab preparation bumps main once, checks out the released commit, and re
   git('init', '-b', 'main');
   git('config', 'user.name', 'Release test');
   git('config', 'user.email', 'test@example.com');
-  for (const name of ['gitlab-release.mjs', 'macos-release.mjs', 'bump-version.js', 'generate-changelog.js']) fs.copyFileSync(path.join(scriptDir, name), path.join(cwd, 'scripts', name));
+  for (const name of ['gitlab-release.mjs', 'macos-release.mjs', 'native-runtime.mjs', 'bump-version.js', 'generate-changelog.js']) fs.copyFileSync(path.join(scriptDir, name), path.join(cwd, 'scripts', name));
   const pkg = { name: 'release-test', version: '1.2.0' };
   fs.writeFileSync(path.join(cwd, 'package.json'), JSON.stringify(pkg));
   fs.writeFileSync(path.join(cwd, 'package-lock.json'), JSON.stringify({ ...pkg, lockfileVersion: 3, packages: { '': pkg } }));

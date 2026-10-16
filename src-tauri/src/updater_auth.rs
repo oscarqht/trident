@@ -78,7 +78,11 @@ pub async fn get_updater(app: &AppHandle) -> Result<Updater, String> {
             .header("X-Trident-Token", &connection.token)
             .send()
             .await
-            .map_err(|_| "Could not load GitLab update credentials. Please try again.")?
+            .map_err(|_| "Could not load GitLab update credentials. Please try again.")?;
+        if response.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+            return Err("Could not access saved update credentials. Secure credential storage is unavailable; reinstall Trident using a build for your Mac's architecture.".into());
+        }
+        let response = response
             .error_for_status()
             .map_err(|_| "Could not load GitLab update credentials. Please try again.")?;
         let credentials: serde_json::Value = response
