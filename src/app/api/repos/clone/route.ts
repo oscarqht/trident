@@ -3,6 +3,8 @@ import { z } from 'zod';
 import fs from 'node:fs';
 import path from 'node:path';
 import { GitService } from '@/lib/git';
+import type { GitCredentials } from '@/lib/git-auth';
+import { matchingCredentialsForRemote } from '@/lib/credential-matching';
 import { addRepository, getRepositories, updateRepository } from '@/lib/store';
 import { findCredentialForRemote, getCredentialById, getCredentialToken } from '@/lib/credentials';
 
@@ -83,18 +85,25 @@ export async function POST(request: Request) {
     }
 
     let associatedCredentialId: string | null = credentialId ?? null;
-    let credentialsForClone: { username: string; token: string } | undefined;
+    let credentialsForClone: GitCredentials | undefined;
 
     if (associatedCredentialId) {
       const selectedCredential = await getCredentialById(associatedCredentialId);
       if (!selectedCredential) {
         return NextResponse.json({ error: 'Selected credential not found' }, { status: 400 });
       }
+      if (matchingCredentialsForRemote(repoUrl, [selectedCredential]).length === 0) {
+        return NextResponse.json({ error: 'Selected credential does not match the repository server' }, { status: 400 });
+      }
       const token = await getCredentialToken(selectedCredential.id);
       if (!token) {
         return NextResponse.json({ error: 'Selected credential token is unavailable' }, { status: 400 });
       }
-      credentialsForClone = { username: selectedCredential.username, token };
+      credentialsForClone = {
+        username: selectedCredential.username,
+        token,
+        serverUrl: selectedCredential.type === 'gitlab' ? selectedCredential.serverUrl : 'https://github.com',
+      };
     } else {
       const matchedCredential = await findCredentialForRemote(repoUrl);
       if (matchedCredential) {
@@ -102,6 +111,7 @@ export async function POST(request: Request) {
         credentialsForClone = {
           username: matchedCredential.credential.username,
           token: matchedCredential.token,
+          serverUrl: matchedCredential.credential.type === 'gitlab' ? matchedCredential.credential.serverUrl : 'https://github.com',
         };
       }
     }

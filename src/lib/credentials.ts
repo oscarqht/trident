@@ -36,6 +36,7 @@ export interface CredentialMetadata {
 import fs from 'fs';
 import path from 'path';
 import { getAppDataDir } from './platform-utils';
+import { matchingCredentialsForRemote } from './credential-matching';
 
 type KeytarModule = {
   getPassword(service: string, account: string): Promise<string | null>;
@@ -410,43 +411,9 @@ export async function deleteCredential(id: string): Promise<{ success: boolean; 
 export async function findCredentialForRemote(remoteUrl: string): Promise<{ credential: Credential; token: string } | null> {
   const credentials = await getAllCredentials();
 
-  // Check if it's a GitHub URL
-  if (remoteUrl.includes('github.com')) {
-    const githubCred = credentials.find((c) => c.type === 'github');
-    if (githubCred) {
-      const token = await getCredentialToken(githubCred.id);
-      if (token) {
-        return { credential: githubCred, token };
-      }
-    }
-  }
-
-  // Check GitLab servers
-  for (const cred of credentials) {
-    if (cred.type === 'gitlab') {
-      // Extract host from remote URL
-      let host: string;
-      try {
-        if (remoteUrl.startsWith('git@')) {
-          // SSH URL: git@gitlab.com:user/repo.git
-          host = remoteUrl.split('@')[1].split(':')[0];
-        } else {
-          // HTTP URL
-          host = new URL(remoteUrl).host;
-        }
-      } catch {
-        continue;
-      }
-
-      // Check if the credential's server URL matches
-      const credHost = new URL(cred.serverUrl).host;
-      if (host === credHost) {
-        const token = await getCredentialToken(cred.id);
-        if (token) {
-          return { credential: cred, token };
-        }
-      }
-    }
+  for (const credential of matchingCredentialsForRemote(remoteUrl, credentials)) {
+    const token = await getCredentialToken(credential.id);
+    if (token) return { credential, token };
   }
 
   return null;

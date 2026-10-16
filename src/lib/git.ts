@@ -7,35 +7,9 @@ import { mkdtemp, unlink, access, readFile, writeFile, stat } from 'node:fs/prom
 import { join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { getAugmentedEnv } from './platform-utils';
+import { getGitAuthConfig, type GitCredentials } from './git-auth';
 
 const execFileAsync = promisify(execFile);
-
-function normalizeRemoteUrlForHttpAuth(remoteUrl: string): string | null {
-  if (remoteUrl.startsWith('http://') || remoteUrl.startsWith('https://')) {
-    return remoteUrl;
-  }
-
-  // Support converting common SSH format to HTTPS for token-based auth.
-  // Example: git@github.com:owner/repo.git -> https://github.com/owner/repo.git
-  const sshMatch = remoteUrl.match(/^git@([^:]+):(.+)$/);
-  if (sshMatch) {
-    return `https://${sshMatch[1]}/${sshMatch[2]}`;
-  }
-
-  return null;
-}
-
-function withCredentialsInRemoteUrl(remoteUrl: string, credentials: { username: string; token: string }): string {
-  const normalized = normalizeRemoteUrlForHttpAuth(remoteUrl);
-  if (!normalized) {
-    return remoteUrl;
-  }
-
-  const urlObj = new URL(normalized);
-  urlObj.username = credentials.username;
-  urlObj.password = credentials.token;
-  return urlObj.toString();
-}
 
 // Cache simple-git instances to avoid spawning too many processes if possible,
 // though simple-git is lightweight.
@@ -82,6 +56,20 @@ export class GitService {
     return getGit(this.repoPath);
   }
 
+  private async gitForRemote(remote: string, credentials?: GitCredentials): Promise<SimpleGit> {
+    if (!credentials) return this.git;
+    const details = (await this.git.getRemotes(true)).find(item => item.name === remote);
+    const urls = details ? [...new Set([details.refs.fetch, details.refs.push].filter(Boolean))] : [remote];
+    const git = simpleGit({
+      baseDir: this.repoPath, binary: 'git', trimmed: false,
+      config: [...DEFAULT_GIT_CONFIG, ...urls.flatMap(url => getGitAuthConfig(url, credentials))],
+    });
+    return git.env({
+      ...getAugmentedEnv(), GIT_TERMINAL_PROMPT: '0',
+      GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=no',
+    });
+  }
+
   private resolveFilePathWithinRepo(filePath: string): string {
     const resolvedRepoPath = resolve(this.repoPath);
     const resolvedFilePath = resolve(resolvedRepoPath, filePath);
@@ -95,7 +83,7 @@ export class GitService {
   static async cloneRepository(
     repoUrl: string,
     destinationPath: string,
-    options: { credentials?: { username: string; token: string } } = {}
+    options: { credentials?: GitCredentials } = {}
   ): Promise<void> {
     const trimmedRepoUrl = repoUrl.trim();
     const trimmedDestinationPath = destinationPath.trim();
@@ -111,7 +99,7 @@ export class GitService {
       binary: 'git',
       maxConcurrentProcesses: 2,
       trimmed: false,
-      config: [...DEFAULT_GIT_CONFIG],
+      config: [...DEFAULT_GIT_CONFIG, ...(options.credentials ? getGitAuthConfig(trimmedRepoUrl, options.credentials) : [])],
     });
 
     git.env({
@@ -120,17 +108,7 @@ export class GitService {
       GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=no',
     });
 
-    const cloneUrl = options.credentials
-      ? withCredentialsInRemoteUrl(trimmedRepoUrl, options.credentials)
-      : trimmedRepoUrl;
-
-    await git.clone(cloneUrl, trimmedDestinationPath);
-
-    // Never persist tokenized URL in cloned repository config.
-    if (cloneUrl !== trimmedRepoUrl) {
-      const clonedGit = getGit(trimmedDestinationPath);
-      await clonedGit.raw(['remote', 'set-url', 'origin', trimmedRepoUrl]);
-    }
+    await git.clone(trimmedRepoUrl, trimmedDestinationPath);
   }
 
   static async initializeRepository(directoryPath: string): Promise<void> {
@@ -285,12 +263,19 @@ export class GitService {
     return message.trimEnd();
   }
 
-  async fetch(): Promise<void> {
-    await this.git.raw(['fetch', '--prune']);
+  private async defaultRemote(): Promise<string> {
+    const branch = (await this.git.branchLocal()).current;
+    return (await this.getTrackingBranch(branch))?.remote || 'origin';
   }
 
-  async fetchRemote(remote: string): Promise<void> {
-    await this.git.raw(['fetch', '--prune', remote]);
+  async fetch(options: { credentials?: GitCredentials } = {}): Promise<void> {
+    const git = options.credentials ? await this.gitForRemote(await this.defaultRemote(), options.credentials) : this.git;
+    await git.raw(['fetch', '--prune']);
+  }
+
+  async fetchRemote(remote: string, credentials?: GitCredentials): Promise<void> {
+    const git = await this.gitForRemote(remote, credentials);
+    await git.raw(['fetch', '--prune', remote]);
   }
 
   async fetchAllRemotes(): Promise<void> {
@@ -326,15 +311,16 @@ export class GitService {
     await this.git.raw(['remote', 'remove', trimmedName]);
   }
 
-  async pull(): Promise<void> {
-    await this.git.pull();
+  async pull(options: { credentials?: GitCredentials } = {}): Promise<void> {
+    const git = options.credentials ? await this.gitForRemote(await this.defaultRemote(), options.credentials) : this.git;
+    await git.pull();
   }
 
-  async push(options: { credentials?: { username: string; token: string } } = {}): Promise<void> {
+  async push(options: { credentials?: GitCredentials } = {}): Promise<void> {
     const { credentials } = options;
 
     if (credentials) {
-      // If credentials are provided, we must use pushToRemote with the authenticated URL
+      // Use the named upstream with credentials scoped to this operation.
       // We need to resolve the current branch and its upstream
       const branchSummary = await this.git.branchLocal();
       const currentBranch = branchSummary.current;
@@ -1027,7 +1013,7 @@ export class GitService {
     options: {
       pushToRemote?: boolean;
       remote?: string;
-      credentials?: { username: string; token: string };
+      credentials?: GitCredentials;
     } = {}
   ): Promise<void> {
     const { pushToRemote = false, remote, credentials } = options;
@@ -1065,24 +1051,10 @@ export class GitService {
       selectedRemote = allRemotes.some((item) => item.name === 'origin') ? 'origin' : allRemotes[0].name;
     }
 
-    let targetRemote = selectedRemote;
-    if (credentials) {
-      const remoteUrl = await this.getRemoteUrl(selectedRemote);
-      if (remoteUrl) {
-        try {
-          const urlObj = new URL(remoteUrl);
-          urlObj.username = credentials.username;
-          urlObj.password = credentials.token;
-          targetRemote = urlObj.toString();
-        } catch (e) {
-          console.warn('[createTag] Failed to construct authenticated URL, falling back to remote name', e);
-        }
-      } else {
-        console.warn(`[createTag] Could not resolve URL for remote '${selectedRemote}', falling back to remote name`);
-      }
-    }
+    const git = await this.gitForRemote(selectedRemote, credentials);
+    const targetRemote = selectedRemote;
 
-    await this.git.push([targetRemote, `refs/tags/${cleanTagName}`]);
+    await git.push([targetRemote, `refs/tags/${cleanTagName}`]);
   }
 
   async deleteBranch(branch: string): Promise<void> {
@@ -1200,27 +1172,12 @@ export class GitService {
     await this.git.raw(['worktree', 'prune']);
   }
 
-  async deleteRemoteBranch(remote: string, branch: string, credentials?: { username: string; token: string }): Promise<void> {
-    let targetRemote = remote;
-
-    if (credentials) {
-      const remoteUrl = await this.getRemoteUrl(remote);
-      if (remoteUrl) {
-        try {
-          const urlObj = new URL(remoteUrl);
-          urlObj.username = credentials.username;
-          urlObj.password = credentials.token;
-          targetRemote = urlObj.toString();
-        } catch (e) {
-          console.warn('[deleteRemoteBranch] Failed to construct authenticated URL, falling back to remote name', e);
-        }
-      } else {
-        console.warn(`[deleteRemoteBranch] Could not resolve URL for remote '${remote}', falling back to remote name`);
-      }
-    }
+  async deleteRemoteBranch(remote: string, branch: string, credentials?: GitCredentials): Promise<void> {
+    const git = await this.gitForRemote(remote, credentials);
+    const targetRemote = remote;
 
     try {
-      await this.git.push([targetRemote, '--delete', branch]);
+      await git.push([targetRemote, '--delete', branch]);
     } catch (e: any) {
       const errorMessage = e?.message || '';
       if (errorMessage.includes('remote ref does not exist')) {
@@ -1231,9 +1188,9 @@ export class GitService {
     }
 
     // Also delete the remote-tracking branch locally to update the view immediately
-    // This is necessary because if we used a URL for targetRemote, git won't automatically prune the named remote's ref
+    // The named push may already have pruned this ref.
     try {
-      await this.git.branch(['-r', '-D', `${remote}/${branch}`]);
+      await git.branch(['-r', '-D', `${remote}/${branch}`]);
     } catch (e) {
       // Ignore error if branch doesn't exist locally or if deletion fails for some reason
       console.debug(`[deleteRemoteBranch] Could not delete local remote-tracking branch ${remote}/${branch}:`, e);
@@ -1244,26 +1201,11 @@ export class GitService {
     await this.git.raw(['tag', '-d', tag]);
   }
 
-  async deleteRemoteTag(remote: string, tag: string, credentials?: { username: string; token: string }): Promise<void> {
-    let targetRemote = remote;
+  async deleteRemoteTag(remote: string, tag: string, credentials?: GitCredentials): Promise<void> {
+    const git = await this.gitForRemote(remote, credentials);
+    const targetRemote = remote;
 
-    if (credentials) {
-      const remoteUrl = await this.getRemoteUrl(remote);
-      if (remoteUrl) {
-        try {
-          const urlObj = new URL(remoteUrl);
-          urlObj.username = credentials.username;
-          urlObj.password = credentials.token;
-          targetRemote = urlObj.toString();
-        } catch (e) {
-          console.warn('[deleteRemoteTag] Failed to construct authenticated URL, falling back to remote name', e);
-        }
-      } else {
-        console.warn(`[deleteRemoteTag] Could not resolve URL for remote '${remote}', falling back to remote name`);
-      }
-    }
-
-    await this.git.push([targetRemote, '--delete', `refs/tags/${tag}`]);
+    await git.push([targetRemote, '--delete', `refs/tags/${tag}`]);
   }
 
   async renameBranch(
@@ -1271,7 +1213,7 @@ export class GitService {
     newName: string,
     options: {
       renameTrackingRemote?: boolean;
-      credentials?: { username: string; token: string };
+      credentials?: GitCredentials;
     } = {}
   ): Promise<void> {
     const { renameTrackingRemote = false, credentials } = options;
@@ -1302,45 +1244,29 @@ export class GitService {
     remote: string,
     oldName: string,
     newName: string,
-    credentials?: { username: string; token: string }
+    credentials?: GitCredentials
   ): Promise<void> {
     if (oldName === newName) return;
 
-    let targetRemote = remote;
-
-    if (credentials) {
-      const remoteUrl = await this.getRemoteUrl(remote);
-      if (remoteUrl) {
-        try {
-          const urlObj = new URL(remoteUrl);
-          urlObj.username = credentials.username;
-          urlObj.password = credentials.token;
-          targetRemote = urlObj.toString();
-        } catch (e) {
-          console.warn('[renameRemoteBranch] Failed to construct authenticated URL, falling back to remote name', e);
-        }
-      } else {
-        console.warn(`[renameRemoteBranch] Could not resolve URL for remote '${remote}', falling back to remote name`);
-      }
-    }
-
+    const git = await this.gitForRemote(remote, credentials);
+    const targetRemote = remote;
     // Create the new remote branch from the old remote-tracking ref, then delete the old remote branch.
     // Using the remote-tracking ref avoids requiring a same-named local branch to exist.
     const oldTrackingRef = `refs/remotes/${remote}/${oldName}`;
-    await this.git.push([targetRemote, `${oldTrackingRef}:refs/heads/${newName}`]);
-    await this.git.push([targetRemote, '--delete', oldName]);
+    await git.push([targetRemote, `${oldTrackingRef}:refs/heads/${newName}`]);
+    await git.push([targetRemote, '--delete', oldName]);
 
     // Update remote-tracking refs locally so the branches tree reflects the rename immediately.
     const newTrackingRef = `refs/remotes/${remote}/${newName}`;
     try {
-      const oldTrackingHash = (await this.git.revparse([oldTrackingRef])).trim();
-      await this.git.raw(['update-ref', newTrackingRef, oldTrackingHash]);
+      const oldTrackingHash = (await git.revparse([oldTrackingRef])).trim();
+      await git.raw(['update-ref', newTrackingRef, oldTrackingHash]);
     } catch (e) {
       console.debug(`[renameRemoteBranch] Could not update local tracking ref ${newTrackingRef}:`, e);
     }
 
     try {
-      await this.git.branch(['-r', '-D', `${remote}/${oldName}`]);
+      await git.branch(['-r', '-D', `${remote}/${oldName}`]);
     } catch (e) {
       console.debug(`[renameRemoteBranch] Could not delete old local remote-tracking branch ${remote}/${oldName}:`, e);
     }
@@ -1883,12 +1809,14 @@ export class GitService {
     remoteBranch: string,
     options: {
       rebase?: boolean;
+      credentials?: GitCredentials;
       isLinkedWorktree?: boolean;
     } = {}
   ): Promise<void> {
-    const { rebase = true, isLinkedWorktree = false } = options;
+    const { rebase = true, isLinkedWorktree = false, credentials } = options;
     
-    console.log('[pullFromRemote] Starting pull:', { localBranch, remote, remoteBranch, options });
+    console.log('[pullFromRemote] Starting pull:', { localBranch, remote, remoteBranch, options: { ...options, credentials: credentials ? { ...credentials, token: '***' } : undefined } });
+    const git = await this.gitForRemote(remote, credentials);
 
     // If this branch is checked out in another worktree, run the pull in that worktree instead
     // because git will refuse to check out the branch in this worktree.
@@ -1903,7 +1831,7 @@ export class GitService {
         });
       } finally {
         try {
-          await this.git.fetch(remote);
+          await git.fetch(remote);
         } catch (e) {
           console.warn('[pullFromRemote] Failed to refresh refs in current repo after linked worktree pull:', e);
         }
@@ -1912,66 +1840,66 @@ export class GitService {
     }
     
     // Get current branch to see if we need to checkout
-    const branchSummary = await this.git.branchLocal();
+    const branchSummary = await git.branchLocal();
     const initialBranch = branchSummary.current;
     const needsCheckout = localBranch !== initialBranch;
 
     // First, fetch from remote to get latest refs
     console.log('[pullFromRemote] Fetching from remote:', remote);
-    await this.git.fetch(remote);
+    await git.fetch(remote);
     console.log('[pullFromRemote] Fetch completed');
     
     const remoteFull = `${remote}/${remoteBranch}`;
     
     // Check if remote branch exists
     try {
-      await this.git.revparse(['--verify', `refs/remotes/${remoteFull}`]);
+      await git.revparse(['--verify', `refs/remotes/${remoteFull}`]);
       console.log('[pullFromRemote] Remote branch exists:', remoteFull);
     } catch {
       throw new Error(`Remote branch '${remoteFull}' does not exist`);
     }
     
     // Check if we have uncommitted changes (excluding untracked files which stash push skips)
-    const status = await this.git.status();
+    const status = await git.status();
     const hasChanges = status.files.some((f) => !(f.index === '?' && f.working_dir === '?'));
     console.log('[pullFromRemote] Has uncommitted changes:', hasChanges);
     
     if (hasChanges) {
       // Stash changes before pull
       console.log('[pullFromRemote] Stashing changes...');
-      await this.git.stash(['push', '-m', 'auto-stash before pull']);
+      await git.stash(['push', '-m', 'auto-stash before pull']);
     }
 
     // Checkout the target branch if it's not the current one
     if (needsCheckout) {
       console.log(`[pullFromRemote] Checking out branch ${localBranch}...`);
-      await this.git.checkout(localBranch);
+      await git.checkout(localBranch);
     }
     
     try {
       if (rebase) {
         // Rebase onto remote branch
         console.log('[pullFromRemote] Rebasing onto:', remoteFull);
-        await this.git.rebase([remoteFull]);
+        await git.rebase([remoteFull]);
         console.log('[pullFromRemote] Rebase completed');
       } else {
         // Merge remote branch
         console.log('[pullFromRemote] Merging:', remoteFull);
-        await this.git.merge([remoteFull]);
+        await git.merge([remoteFull]);
         console.log('[pullFromRemote] Merge completed');
       }
       
       // If we switched branches, try to switch back
       if (needsCheckout) {
         console.log(`[pullFromRemote] Returning to original branch ${initialBranch}...`);
-        await this.git.checkout(initialBranch);
+        await git.checkout(initialBranch);
       }
 
       // Pop stashed changes if we stashed them
       if (hasChanges) {
         try {
           console.log('[pullFromRemote] Popping stashed changes...');
-          await this.git.stash(['pop']);
+          await git.stash(['pop']);
         } catch {
           throw new Error('Pull succeeded but failed to restore local changes. Run "git stash pop" manually.');
         }
@@ -1979,7 +1907,7 @@ export class GitService {
 
       // Refresh remote refs again after pull so remote branch updates are reflected in the UI.
       console.log('[pullFromRemote] Refreshing remote refs after pull:', remote);
-      await this.git.fetch(remote);
+      await git.fetch(remote);
       console.log('[pullFromRemote] Post-pull fetch completed');
       
       console.log('[pullFromRemote] Operation completed successfully');
@@ -1999,9 +1927,9 @@ export class GitService {
         // If it's a linked worktree or not a conflict, try to abort and return to initial state
         try {
           if (rebase) {
-            await this.git.rebase(['--abort']);
+            await git.rebase(['--abort']);
           } else {
-            await this.git.merge(['--abort']);
+            await git.merge(['--abort']);
           }
         } catch {
           // Abort might fail
@@ -2009,7 +1937,7 @@ export class GitService {
 
         if (needsCheckout) {
           try {
-            await this.git.checkout(initialBranch);
+            await git.checkout(initialBranch);
           } catch {
             // Checkout back might fail
           }
@@ -2017,7 +1945,7 @@ export class GitService {
 
         if (hasChanges) {
           try {
-            await this.git.stash(['pop']);
+            await git.stash(['pop']);
           } catch {
             // Pop might fail
           }
@@ -2139,8 +2067,8 @@ export class GitService {
     }
   }
 
-  private async getRemoteTagNames(remote: string): Promise<Set<string>> {
-    const output = await this.git.raw(['ls-remote', '--tags', remote]);
+  private async getRemoteTagNames(remote: string, git = this.git): Promise<Set<string>> {
+    const output = await git.raw(['ls-remote', '--tags', remote]);
     const remoteTags = new Set<string>();
 
     for (const line of output.split('\n')) {
@@ -2159,16 +2087,16 @@ export class GitService {
     return remoteTags;
   }
 
-  private async pushLocalOnlyTagsToRemote(targetRemote: string, remoteForDiscovery: string): Promise<number> {
-    const localTags = (await this.git.tags()).all;
+  private async pushLocalOnlyTagsToRemote(targetRemote: string, remoteForDiscovery: string, git = this.git): Promise<number> {
+    const localTags = (await git.tags()).all;
     if (localTags.length === 0) return 0;
 
-    const remoteTags = await this.getRemoteTagNames(remoteForDiscovery);
+    const remoteTags = await this.getRemoteTagNames(remoteForDiscovery, git);
     const localOnlyTags = localTags.filter((tag) => !remoteTags.has(tag));
     if (localOnlyTags.length === 0) return 0;
 
     const tagRefSpecs = localOnlyTags.map((tag) => `refs/tags/${tag}`);
-    await this.git.push([targetRemote, ...tagRefSpecs]);
+    await git.push([targetRemote, ...tagRefSpecs]);
     return localOnlyTags.length;
   }
 
@@ -2183,7 +2111,7 @@ export class GitService {
       setUpstream?: boolean;
       squash?: boolean;
       squashMessage?: string;
-      credentials?: { username: string; token: string };
+      credentials?: GitCredentials;
       isLinkedWorktree?: boolean;
     } = {}
   ): Promise<void> {
@@ -2208,53 +2136,36 @@ export class GitService {
       });
     }
 
+    const git = await this.gitForRemote(remote, credentials);
+
     // Get current branch to see if we need to checkout
-    const branchSummary = await this.git.branchLocal();
+    const branchSummary = await git.branchLocal();
     const initialBranch = branchSummary.current;
     const needsCheckout = localBranch !== initialBranch;
 
     // Check if we have uncommitted changes
-    const status = await this.git.status();
+    const status = await git.status();
     const hasChanges = status.files.some((f) => !(f.index === '?' && f.working_dir === '?'));
     console.log('[pushToRemote] Has uncommitted changes:', hasChanges);
     
     if (hasChanges) {
       // Stash changes before push (including any rebase/merge operations)
       console.log('[pushToRemote] Stashing changes...');
-      await this.git.stash(['push', '-m', 'auto-stash before push']);
+      await git.stash(['push', '-m', 'auto-stash before push']);
     }
 
     // Checkout the target branch if it's not the current one
     if (needsCheckout) {
       console.log(`[pushToRemote] Checking out branch ${localBranch}...`);
-      await this.git.checkout(localBranch);
+      await git.checkout(localBranch);
     }
     
     try {
-      // Determine the remote URL or name to use
-      let targetRemote = remote;
-      
-      if (credentials) {
-        const remoteUrl = await this.getRemoteUrl(remote);
-        if (remoteUrl) {
-          try {
-            targetRemote = withCredentialsInRemoteUrl(remoteUrl, credentials);
-            console.log('[pushToRemote] Using authenticated URL for push');
-          } catch (e) {
-            console.warn('[pushToRemote] Failed to construct authenticated URL, falling back to remote name', e);
-          }
-        } else {
-            console.warn(`[pushToRemote] Could not resolve URL for remote '${remote}', falling back to remote name`);
-        }
-      }
-
+      const targetRemote = remote;
       // First, fetch from remote to update our local refs (general fetch, not specific branch)
       // This updates our knowledge of what branches exist on the remote
       console.log('[pushToRemote] Fetching from remote:', remote);
-      // Note: We use the original remote name for fetch, assuming fetch auth is handled or same as push
-      // If fetch requires auth, we might need to use targetRemote here too, but simple-git might handle it if configured
-      // For now, let's try using targetRemote for fetch as well if we have credentials
-      await this.git.fetch(targetRemote);
+      await git.fetch(targetRemote);
       console.log('[pushToRemote] Fetch completed');
       
       const remoteFull = `${remote}/${remoteBranch}`;
@@ -2262,7 +2173,7 @@ export class GitService {
       // Check if remote branch exists by trying to resolve it
       let remoteBranchExists = false;
       try {
-        await this.git.revparse(['--verify', `refs/remotes/${remoteFull}`]);
+        await git.revparse(['--verify', `refs/remotes/${remoteFull}`]);
         remoteBranchExists = true;
         console.log('[pushToRemote] Remote branch exists:', remoteFull);
       } catch {
@@ -2280,12 +2191,12 @@ export class GitService {
         if (rebaseFirst) {
           // Remote branch exists, rebase onto it
           console.log('[pushToRemote] Rebasing onto:', remoteFull);
-          await this.git.rebase([remoteFull]);
+          await git.rebase([remoteFull]);
           console.log('[pushToRemote] Rebase completed');
         } else {
           // Remote branch exists, merge it
           console.log('[pushToRemote] Merging:', remoteFull);
-          await this.git.merge([remoteFull]);
+          await git.merge([remoteFull]);
           console.log('[pushToRemote] Merge completed');
         }
 
@@ -2293,11 +2204,11 @@ export class GitService {
         if (squash) {
             console.log('[pushToRemote] Squashing commits onto:', remoteFull);
             // Reset soft to remote branch to stage all changes
-            await this.git.reset(['--soft', remoteFull]);
+            await git.reset(['--soft', remoteFull]);
             
             // Commit all staged changes
             const message = squashMessage || `Squash commits before push to ${remoteBranch}`;
-            await this.git.commit(message);
+            await git.commit(message);
             console.log('[pushToRemote] Squash completed');
         }
       } else if (remoteBranchExists && forcePush) {
@@ -2360,33 +2271,32 @@ export class GitService {
       
       // Use simple-git's push method with explicit remote and branch
       // This handles credentials better than raw commands
-      // Use targetRemote (which might contain credentials)
-      const pushResult = await this.git.push(targetRemote, `${localBranch}:${remoteBranch}`, pushOptions);
-      console.log('[pushToRemote] Push completed successfully, result:', pushResult);
+      // Keep the named remote so fetch updates its tracking refs.
+      await git.push(targetRemote, `${localBranch}:${remoteBranch}`, pushOptions);
+      console.log('[pushToRemote] Push completed successfully');
 
       if (setUpstream) {
-        // Push may use an authenticated URL instead of the named remote, so set upstream
-        // explicitly against the remote name to guarantee tracking is configured.
-        await this.git.raw(['config', `branch.${localBranch}.remote`, remote]);
-        await this.git.raw(['config', `branch.${localBranch}.merge`, `refs/heads/${remoteBranch}`]);
+        // Configure tracking explicitly against the named remote.
+        await git.raw(['config', `branch.${localBranch}.remote`, remote]);
+        await git.raw(['config', `branch.${localBranch}.merge`, `refs/heads/${remoteBranch}`]);
       }
 
       if (pushLocalOnlyTags ?? true) {
-        const pushedTagCount = await this.pushLocalOnlyTagsToRemote(targetRemote, remote);
+        const pushedTagCount = await this.pushLocalOnlyTagsToRemote(targetRemote, remote, git);
         console.log(`[pushToRemote] Pushed ${pushedTagCount} local-only tag(s) to ${remote}`);
       }
       
       // If we switched branches, try to switch back
       if (needsCheckout) {
         console.log(`[pushToRemote] Returning to original branch ${initialBranch}...`);
-        await this.git.checkout(initialBranch);
+        await git.checkout(initialBranch);
       }
 
       // Pop stashed changes if we stashed them
       if (hasChanges) {
         try {
           console.log('[pushToRemote] Popping stashed changes...');
-          await this.git.stash(['pop']);
+          await git.stash(['pop']);
         } catch {
           // Stash pop might fail if there are conflicts
           throw new Error('Push succeeded but failed to restore local changes. Run "git stash pop" manually.');
@@ -2404,7 +2314,7 @@ export class GitService {
       if (isLinkedWorktree || !isConflict) {
         if (rebaseFirst) {
           try {
-            await this.git.raw(['rebase', '--abort']);
+            await git.raw(['rebase', '--abort']);
           } catch {
             // Ignore
           }
@@ -2412,7 +2322,7 @@ export class GitService {
 
         if (needsCheckout) {
           try {
-            await this.git.checkout(initialBranch);
+            await git.checkout(initialBranch);
           } catch {
             // Ignore
           }
@@ -2420,7 +2330,7 @@ export class GitService {
 
         if (hasChanges) {
           try {
-            await this.git.stash(['pop']);
+            await git.stash(['pop']);
           } catch {
             // Ignore
           }

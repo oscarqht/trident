@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { GitService } from '@/lib/git';
+import type { GitCredentials } from '@/lib/git-auth';
+import { matchingCredentialsForRemote } from '@/lib/credential-matching';
 import { getRepositories } from '@/lib/store';
 import { getCredentialById, getCredentialToken, findCredentialForRemote } from '@/lib/credentials';
 import { getImageMimeType, isImageFile } from '@/lib/utils';
@@ -13,33 +15,38 @@ const actionSchema = z.object({
   data: z.any().optional(), // Payload depends on action
 });
 
-async function resolveCredentials(repoPath: string, git: GitService, remoteName?: string) {
+async function resolveCredentials(repoPath: string, git: GitService, remoteName?: string): Promise<GitCredentials | undefined> {
   const repos = getRepositories();
   const repoConfig = repos.find(r => r.path === repoPath);
   
+  const remoteUrl = remoteName ? await git.getRemoteUrl(remoteName) : undefined;
+
   // 1. Check for explicitly associated credential
   if (repoConfig?.credentialId) {
     const cred = await getCredentialById(repoConfig.credentialId);
-    if (cred) {
+    if (cred && (!remoteName || (remoteUrl && matchingCredentialsForRemote(remoteUrl, [cred]).length > 0))) {
       const token = await getCredentialToken(cred.id);
       if (token) {
-        return { username: cred.username, token };
+        return { username: cred.username, token, serverUrl: cred.type === 'gitlab' ? cred.serverUrl : 'https://github.com' };
       }
     }
   }
 
   // 2. Fallback: try to find matching credential by URL
-  if (remoteName) {
-    const remoteUrl = await git.getRemoteUrl(remoteName);
-    if (remoteUrl) {
-       const result = await findCredentialForRemote(remoteUrl);
-       if (result) {
-         return { username: result.credential.username, token: result.token };
-       }
+  if (remoteUrl) {
+    const result = await findCredentialForRemote(remoteUrl);
+    if (result) {
+      return { username: result.credential.username, token: result.token, serverUrl: result.credential.type === 'gitlab' ? result.credential.serverUrl : 'https://github.com' };
     }
   }
 
   return undefined;
+}
+
+async function resolveDefaultCredentials(repoPath: string, git: GitService): Promise<GitCredentials | undefined> {
+  const branches = await git.getBranches();
+  const tracking = await git.getTrackingBranch(branches.current);
+  return resolveCredentials(repoPath, git, tracking?.remote ?? 'origin');
 }
 
 function toImageSide(buffer: Buffer | null, mimeType: string) {
@@ -109,40 +116,21 @@ export async function POST(request: Request) {
         });
         break;
       case 'push':
-        // Try to resolve credentials
-        let pushCredentials = await resolveCredentials(repoPath, git, undefined);
-        
-        if (!pushCredentials) {
-            // If no associated credential, try to infer from upstream
-            try {
-                const status = await git.getBranches();
-                const current = status.current;
-                const tracking = status.trackingInfo[current];
-                if (tracking && tracking.upstream) {
-                    const slashIndex = tracking.upstream.indexOf('/');
-                    if (slashIndex > 0) {
-                        const remoteName = tracking.upstream.slice(0, slashIndex);
-                        pushCredentials = await resolveCredentials(repoPath, git, remoteName);
-                    }
-                }
-            } catch (e) {
-                // Ignore errors finding upstream, just proceed without creds
-                console.warn('[API] Failed to resolve upstream for push credentials:', e);
-            }
-        }
-        
+        const pushCredentials = await resolveDefaultCredentials(repoPath, git);
         await git.push({ credentials: pushCredentials });
         break;
       case 'pull':
-        await git.pull();
+        await git.pull({ credentials: await resolveDefaultCredentials(repoPath, git) });
         break;
       case 'fetch':
         if (data?.allRemotes) {
-          await git.fetchAllRemotes();
+          for (const remote of await git.getRemotes()) {
+            await git.fetchRemote(remote, await resolveCredentials(repoPath, git, remote));
+          }
         } else if (data?.remote) {
-          await git.fetchRemote(data.remote);
+          await git.fetchRemote(data.remote, await resolveCredentials(repoPath, git, data.remote));
         } else {
-          await git.fetch();
+          await git.fetch({ credentials: await resolveDefaultCredentials(repoPath, git) });
         }
         break;
       case 'stage':
@@ -405,6 +393,7 @@ export async function POST(request: Request) {
         console.log('[API] Calling git.pullFromRemote...');
         await git.pullFromRemote(data.localBranch, data.remote, data.remoteBranch, {
           rebase: data.rebase ?? true,
+          credentials: await resolveCredentials(repoPath, git, data.remote),
         });
         console.log('[API] git.pullFromRemote completed');
         break;
