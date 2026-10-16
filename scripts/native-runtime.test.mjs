@@ -26,3 +26,14 @@ test('packaged keytar must contain the runtime architecture before it is loaded'
 test('native load failures stop packaging even when architecture matches', () => {
   assert.throws(() => verifyNativeRuntime('/fixture', 'arm64', 'arm64', () => 'arm64', () => { throw new Error('dlopen failed'); }), /dlopen failed/);
 });
+
+test('release addon supports Intel Node even when the desktop app targets ARM', () => {
+  for (const host of ['x64', 'arm64']) {
+    for (const singleSlice of ['arm64', 'x86_64']) {
+      assert.throws(() => verifyNativeRuntime('/fixture', 'universal', host, () => singleSlice, () => {}), /keytar.*universal/);
+    }
+    let loaded = false;
+    verifyNativeRuntime('/fixture', 'universal', host, () => 'x86_64 arm64', () => { loaded = true; });
+    assert.equal(loaded, true);
+  }
+});

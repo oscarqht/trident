@@ -120,11 +120,10 @@ async function build(platform) {
   run('rustup', ['toolchain', 'install', 'stable', '--profile', 'minimal']);
   run('rustup', ['default', 'stable']);
   run('rustup', ['target', 'add', target]);
-  // The runner can be Intel, where npm installs an x64 keytar. Cross-build it
-  // from source so the keychain module matches the shipped arm64 app.
+  // Support both native and Intel Node installations on users' Macs.
   run('npm', ['ci']);
-  run('npm', ['rebuild', 'keytar'], { env: { ...env, npm_config_arch: 'arm64', npm_config_build_from_source: 'true' } });
-  run('npm', ['run', 'build'], { env: { ...env, TRIDENT_NATIVE_ARCH: 'arm64' } });
+  node('build-macos-keytar.mjs');
+  run('npm', ['run', 'build'], { env: { ...env, TRIDENT_NATIVE_ARCH: 'universal' } });
   run('cargo', ['test', '--manifest-path', 'src-tauri/Cargo.toml', '--lib']);
   const config = generateTauriConfig(env);
   fs.writeFileSync('gitlab-tauri.conf.json', JSON.stringify(config));
