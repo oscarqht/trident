@@ -2,13 +2,13 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 
-export function requireMacosArm64(platform = process.platform, arch = process.arch) {
+export function requireMacos(platform = process.platform) {
   if (platform !== 'darwin') throw new Error('Apple Silicon releases require macOS');
-  if (arch !== 'arm64') throw new Error('Apple Silicon releases require arm64 Node; disable Rosetta for the build runtime.');
 }
 
 // Check the actual standalone copy, not only the build machine's node_modules.
-export function verifyNativeRuntime(root, arch = process.arch,
+// The release runner may be Intel, so the target arch can differ from the host's.
+export function verifyNativeRuntime(root, arch = process.env.TRIDENT_NATIVE_ARCH || process.arch, hostArch = process.arch,
   architectures = binary => execFileSync('lipo', ['-archs', binary], { encoding: 'utf8' }),
   load = filename => createRequire(filename)('keytar')) {
   const entrypoint = path.resolve(root, 'server.js');
@@ -17,5 +17,6 @@ export function verifyNativeRuntime(root, arch = process.arch,
   if (!architectures(binary).trim().split(/\s+/).includes(expected)) {
     throw new Error(`Bundled keytar does not support ${arch}; rebuild native dependencies for the release architecture.`);
   }
-  load(entrypoint);
+  // A foreign-arch addon cannot be dlopen'd by this Node; the lipo check covers it.
+  if (arch === hostArch) load(entrypoint);
 }

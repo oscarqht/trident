@@ -4,7 +4,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { validateCredentials, verifyReleaseBundle, withSigningKeychain } from './macos-release.mjs';
-import { requireMacosArm64 } from './native-runtime.mjs';
+import { requireMacos } from './native-runtime.mjs';
 
 const env = process.env;
 const run = (command, args, options = {}) => {
@@ -116,15 +116,15 @@ async function build(platform) {
   env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ||= env.TAURI_KEY_PASSWORD;
   if (!env.TAURI_SIGNING_PRIVATE_KEY) throw new Error('TAURI_SIGNING_PRIVATE_KEY is required');
   getTauriBuildArgs(platform, target); // Reject cross builds before installing dependencies.
-  requireMacosArm64();
+  requireMacos();
   run('rustup', ['toolchain', 'install', 'stable', '--profile', 'minimal']);
   run('rustup', ['default', 'stable']);
   run('rustup', ['target', 'add', target]);
-  // keytar's old prebuilt macOS package can be Intel-only even on ARM.
-  // Build from source so the keychain module matches the shipped app.
+  // The runner can be Intel, where npm installs an x64 keytar. Cross-build it
+  // from source so the keychain module matches the shipped arm64 app.
   run('npm', ['ci']);
   run('npm', ['rebuild', 'keytar'], { env: { ...env, npm_config_arch: 'arm64', npm_config_build_from_source: 'true' } });
-  run('npm', ['run', 'build']);
+  run('npm', ['run', 'build'], { env: { ...env, TRIDENT_NATIVE_ARCH: 'arm64' } });
   run('cargo', ['test', '--manifest-path', 'src-tauri/Cargo.toml', '--lib']);
   const config = generateTauriConfig(env);
   fs.writeFileSync('gitlab-tauri.conf.json', JSON.stringify(config));
