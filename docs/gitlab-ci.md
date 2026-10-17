@@ -33,7 +33,7 @@ Protect `main` and release tags; store credentials as masked/protected CI variab
 | `UPDATER_ENDPOINTS` | Optional comma-separated updater URLs applied only to GitLab-built bundles. Defaults to the internal GitLab release manifest. |
 | `RELEASE_TAG` | Optional existing `vX.Y.Z` tag for a manual pipeline on main. |
 
-The built-in `CI_JOB_TOKEN` handles package uploads and release API calls. No GitHub token or GitHub CLI is needed. Release builds require all six Apple variables and a Developer ID Application identity. A before-bundle hook signs and verifies bundled Mach-O code (including native Node modules such as keytar). Tauri notarizes and staples the app before packaging its signed updater archive and DMG. Before collecting assets, CI verifies the app's identity, team, hardened runtime, stapled ticket, and Gatekeeper acceptance; checks the updater signature's key ID against the embedded public key; then submits the signed DMG to Apple, requires Accepted, staples it, and assesses the final installer. Any missing credentials or failed check blocks publication. Local developer builds can retain ad-hoc signing.
+The built-in `CI_JOB_TOKEN` handles package uploads and release API calls. GitLab builds and publication need no GitHub token or GitHub CLI; the optional daily sync uses the GitHub variables below. Release builds require all six Apple variables and a Developer ID Application identity. A before-bundle hook signs and verifies bundled Mach-O code (including native Node modules such as keytar). Tauri notarizes and staples the app before packaging its signed updater archive and DMG. Before collecting assets, CI verifies the app's identity, team, hardened runtime, stapled ticket, and Gatekeeper acceptance; checks the updater signature's key ID against the embedded public key; then submits the signed DMG to Apple, requires Accepted, staples it, and assesses the final installer. Any missing credentials or failed check blocks publication. Local developer builds can retain ad-hoc signing.
 
 ## Retries
 
@@ -41,7 +41,34 @@ Retry prepare against unchanged main to reuse its release tag; it does not bump 
 
 If main has advanced, start a manual pipeline on main with `RELEASE_TAG=vX.Y.Z` to rebuild that exact existing tag. The tag's package version must match. Tags from before these scripts landed cannot build through this pipeline without backporting the scripts. A main push arriving while another prepare job runs fetches the latest main before calculating its version; Git rejects concurrent changes during publication rather than force-pushing.
 
-GitHub Actions is manual-only and requires an existing tag, preventing two CI systems from independently bumping main. GitLab does not mirror tags or packages to GitHub. To publish there manually, first make the desired commit/tag available in that repository.
+GitHub Actions is manual-only and requires an existing tag, preventing two CI systems from independently bumping main. The daily GitHub sync mirrors main and the latest published GitLab release as described below.
+
+## Daily GitHub sync
+
+`sync:github` runs only in scheduled pipelines on `main`. The schedule is **daily at 18:00 Asia/Singapore** (`0 18 * * *`), targeting `main`. Scheduled pipelines skip preparation, version bumps, builds, and GitLab publication. GitLab stores schedules outside `.gitlab-ci.yml`; the schedule takes effect for this job after this configuration is merged into `main`.
+
+The job uses these project CI/CD variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `GITHUB_REPOSITORY` | Destination `owner/repo` or `https://github.com/owner/repo.git`. No default is used for the daily sync. |
+| `GITHUB_TOKEN` | Masked PAT with Contents read/write for the destination. Pushing changes under `.github/workflows` also requires workflow write permission (classic PAT: `repo` and `workflow`). Protect the variable when `main` is protected. |
+
+If either variable is absent or blank, the job prints a warning, performs no sync, and succeeds. Other failures (authentication, download, upload, or divergent Git history) fail the job.
+
+The job fetches current GitLab `main` and atomically pushes it plus the latest published GitLab release tag without force. It copies that release's name, notes, and all linked Generic Package Registry files, including signatures. `latest.json` and asset links in release notes are rewritten to GitHub downloads. Historical releases stay untouched; each daily run catches up the latest release. If no release exists, only `main` is synced.
+
+New GitHub releases remain drafts until all uploads succeed. Retries reuse the release and skip files whose SHA256 digest already matches; changed files are replaced. The GitLab job token authenticates this project's release API and package registry requests. Up to five redirects within those API paths are followed (including the latest-release permalink); external destinations and other projects are rejected before credentials are forwarded. GitHub `main` must be able to fast-forward from GitLab, and the PAT must be allowed to push to the destination branch.
+
+To recreate the schedule (check existing schedules first to avoid duplicates):
+
+```sh
+glab schedule create --description "Daily GitHub sync" --ref main --cron "0 18 * * *" --cronTimeZone Asia/Singapore
+```
+
+Validate locally with `node --test scripts/sync-github.test.mjs` and `glab ci lint`.
+
+References: [GitLab scheduled pipelines](https://docs.gitlab.com/ci/pipelines/schedules/), [GitHub releases API](https://docs.github.com/en/rest/releases/releases).
 
 ## Desktop updates
 

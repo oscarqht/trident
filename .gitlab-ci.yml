@@ -1,6 +1,7 @@
 # macOS Apple Silicon desktop releases, built on the internal Mac Mini runner.
 workflow:
   rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "schedule"'
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_MESSAGE =~ /^chore\(release\):/'
       when: never
     - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
@@ -19,6 +20,8 @@ prepare:
   stage: prepare
   image: node:22-bookworm
   resource_group: release-version
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
   script:
     - node --test scripts/bump-version.test.js scripts/gitlab-release.test.js scripts/updater-credentials.test.mjs scripts/native-runtime.test.mjs scripts/build-macos-keytar.test.mjs scripts/macos-release.test.mjs scripts/style-dmg.test.mjs
     - node scripts/gitlab-release.mjs prepare
@@ -31,6 +34,8 @@ prepare:
 
 .build:
   stage: build
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
   needs: [prepare]
   artifacts:
     paths: [release-assets/]
@@ -63,5 +68,18 @@ publish:
   image: node:22-bookworm
   needs: [prepare, 'build:macos']
   resource_group: release-publish
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
   script:
     - node scripts/gitlab-release.mjs publish
+
+# Timing is configured in GitLab > Build > Pipeline schedules (see docs/gitlab-ci.md).
+sync:github:
+  stage: publish
+  image: node:22-bookworm
+  needs: []
+  resource_group: github-sync
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "schedule"'
+  script:
+    - node scripts/sync-github.mjs
